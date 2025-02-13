@@ -139,43 +139,89 @@
     });
     
     // **🔥 Recorte final y preciso 🔥**
+    // document.getElementById("cropButton").addEventListener("click", function() {
+    //     if (!isImageLoaded) return;
+    
+    //     let cropWidth = Math.abs(endX - startX);
+    //     let cropHeight = Math.abs(endY - startY);
+    //     let cropX = Math.min(startX, endX);
+    //     let cropY = Math.min(startY, endY);
+    
+    //     if (cropWidth <= 0 || cropHeight <= 0) return;
+    
+    //     let croppedCanvas = document.createElement("canvas");
+    //     let croppedCtx = croppedCanvas.getContext("2d");
+    
+    //     croppedCanvas.width = cropWidth;
+    //     croppedCanvas.height = cropHeight;
+    
+    //     // **Corrección del recorte - Extraer correctamente con la escala aplicada**
+    //     let realCropX = (cropX - imgX) / scale;
+    //     let realCropY = (cropY - imgY) / scale;
+    //     let realCropWidth = cropWidth / scale;
+    //     let realCropHeight = cropHeight / scale;
+    
+    //     croppedCtx.drawImage(
+    //         img,
+    //         realCropX, realCropY, realCropWidth, realCropHeight,
+    //         0, 0, cropWidth, cropHeight
+    //     );
+    
+    //     let croppedImg = document.getElementById("croppedImage");
+    //     croppedImg.src = croppedCanvas.toDataURL();
+    //     croppedImg.style.display = "block";
+    
+    //     croppedCanvas.toBlob(blob => {
+    //         const formData = new FormData();
+    //         formData.append("image", blob, "cropped.png");
+    
+    //         fetch("/tu-endpoint", { method: "POST", body: formData });
+    //     }, "image/png");
+    // });
+
     document.getElementById("cropButton").addEventListener("click", function() {
-        if (!isImageLoaded) return;
-    
-        let cropWidth = Math.abs(endX - startX);
-        let cropHeight = Math.abs(endY - startY);
-        let cropX = Math.min(startX, endX);
-        let cropY = Math.min(startY, endY);
-    
-        if (cropWidth <= 0 || cropHeight <= 0) return;
-    
-        let croppedCanvas = document.createElement("canvas");
-        let croppedCtx = croppedCanvas.getContext("2d");
-    
-        croppedCanvas.width = cropWidth;
-        croppedCanvas.height = cropHeight;
-    
-        // **Corrección del recorte - Extraer correctamente con la escala aplicada**
-        let realCropX = (cropX - imgX) / scale;
-        let realCropY = (cropY - imgY) / scale;
-        let realCropWidth = cropWidth / scale;
-        let realCropHeight = cropHeight / scale;
-    
-        croppedCtx.drawImage(
-            img,
-            realCropX, realCropY, realCropWidth, realCropHeight,
-            0, 0, cropWidth, cropHeight
-        );
-    
-        let croppedImg = document.getElementById("croppedImage");
-        croppedImg.src = croppedCanvas.toDataURL();
-        croppedImg.style.display = "block";
-    
-        croppedCanvas.toBlob(blob => {
-            const formData = new FormData();
-            formData.append("image", blob, "cropped.png");
-    
-            fetch("/tu-endpoint", { method: "POST", body: formData });
-        }, "image/png");
-    });
+    if (!isImageLoaded) return;
+
+    let cropWidth = Math.abs(endX - startX);
+    let cropHeight = Math.abs(endY - startY);
+    let cropX = Math.min(startX, endX);
+    let cropY = Math.min(startY, endY);
+
+    if (cropWidth <= 0 || cropHeight <= 0) return;
+
+    let croppedCanvas = document.createElement("canvas");
+    let croppedCtx = croppedCanvas.getContext("2d");
+
+    croppedCanvas.width = cropWidth;
+    croppedCanvas.height = cropHeight;
+
+    let realCropX = (cropX - imgX) / scale;
+    let realCropY = (cropY - imgY) / scale;
+    let realCropWidth = cropWidth / scale;
+    let realCropHeight = cropHeight / scale;
+
+    croppedCtx.drawImage(
+        img,
+        realCropX, realCropY, realCropWidth, realCropHeight,
+        0, 0, cropWidth, cropHeight
+    );
+
+    croppedCanvas.toBlob(blob => {
+        const formData = new FormData();
+        formData.append("image", blob, "cropped.png");
+
+        // 🔥 ENVÍO DE LA IMAGEN AL BACKEND
+        fetch("/Imagen/Guardar", { // Cambia la URL según tu ruta en el controlador
+            method: "POST",
+            body: formData
+        })
+        .then(response => response.json())
+        .then(data => {
+            console.log("Imagen guardada con éxito", data);
+        })
+        .catch(error => console.error("Error al enviar la imagen", error));
+    }, "image/png");
+});
+
+
     </script>
