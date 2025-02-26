@@ -1,40 +1,62 @@
-document.getElementById("cropButton").addEventListener("click", function () {
-    if (!isImageLoaded) return;
+document.getElementById("fileInput").addEventListener("change", function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
 
-    let cropWidth = Math.abs(endX - startX);
-    let cropHeight = Math.abs(endY - startY);
-    let cropX = Math.min(startX, endX);
-    let cropY = Math.min(startY, endY);
+    // 🔥 Leer el tipo de archivo para verificar si es BMP
+    const fileType = file.type;
 
-    if (cropWidth <= 0 || cropHeight <= 0) return;
+    // 🔥 Crear un objeto FormData y agregar la imagen
+    const formData = new FormData();
 
-    let croppedCanvas = document.createElement("canvas");
-    let croppedCtx = croppedCanvas.getContext("2d");
+    if (fileType === "image/bmp") {
+        console.log("Imagen BMP detectada, enviándola sin cambios...");
+        formData.append("image", file, file.name); // Enviar BMP sin conversión
+    } else {
+        console.log("Imagen no es BMP, convirtiéndola antes de enviarla...");
+        
+        // Convertir la imagen a BMP antes de enviarla
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            const img = new Image();
+            img.onload = function() {
+                const canvas = document.createElement("canvas");
+                const ctx = canvas.getContext("2d");
 
-    croppedCanvas.width = cropWidth;
-    croppedCanvas.height = cropHeight;
+                canvas.width = img.width;
+                canvas.height = img.height;
 
-    let realCropX = (cropX - imgX) / scale;
-    let realCropY = (cropY - imgY) / scale;
-    let realCropWidth = cropWidth / scale;
-    let realCropHeight = cropHeight / scale;
+                ctx.drawImage(img, 0, 0);
 
-    croppedCtx.drawImage(
-        img,
-        realCropX, realCropY, realCropWidth, realCropHeight,
-        0, 0, cropWidth, cropHeight
-    );
+                // 🔥 Convertir a BMP antes de enviar
+                canvas.toBlob(blob => {
+                    formData.append("image", blob, "converted.bmp"); // Enviar como BMP
+                    enviarImagen(formData);
+                }, "image/bmp");
+            };
+            img.src = e.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
 
-    // Extraer la imagen como Base64 (sin convertirla a PNG)
-    let base64Image = croppedCanvas.toDataURL(originalFormat);
+    // Si la imagen ya es BMP, enviarla directamente
+    if (fileType === "image/bmp") {
+        enviarImagen(formData);
+    }
+});
 
-    // Enviar la imagen al backend
-    fetch("/Imagen/GuardarBase64", {
+// 🔥 Función para enviar la imagen al backend
+function enviarImagen(formData) {
+    fetch("/Imagen/Guardar", { // Asegúrate de que la URL coincida con tu controlador
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ imageBase64: base64Image, format: originalFormat })
+        body: formData
     })
     .then(response => response.json())
-    .then(data => console.log("Imagen guardada con éxito", data))
+    .then(data => {
+        console.log("Imagen guardada con éxito", data);
+    })
     .catch(error => console.error("Error al enviar la imagen", error));
-});
+}
+
+
+
+
