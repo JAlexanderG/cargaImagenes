@@ -14,7 +14,131 @@
     <img id="croppedImage" style="display:none; border: 1px solid #000; margin-top: 10px;"/>
 </body>
 <script>
-    document.getElementById("cropButton").addEventListener("click", function() {
+let img = new Image();
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+let container = document.getElementById("canvasContainer");
+
+let scale = 1, minScale = 0.5, maxScale = 3;
+let imgX = 0, imgY = 0;
+let offsetX = 0, offsetY = 0;
+let isDragging = false;
+let startX, startY, endX, endY;
+let isSelecting = false, isImageLoaded = false;
+
+// Bloquear desplazamiento automático del botón central del mouse
+document.addEventListener("mousedown", function(event) {
+    if (event.button === 1) {
+        event.preventDefault();
+    }
+});
+
+// Cargar imagen y ajustarla al canvas
+document.getElementById("fileInput").addEventListener("change", function(event) {
+    const file = event.target.files[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = function(e) {
+        img.onload = function() {
+            isImageLoaded = true;
+            scale = 1;
+            imgX = imgY = 0;
+            drawCanvas();
+        };
+        img.src = e.target.result;
+    };
+    reader.readAsDataURL(file);
+});
+
+// Dibuja la imagen con la transformación actual
+function drawCanvas() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.save();
+    ctx.setTransform(scale, 0, 0, scale, imgX, imgY);
+    ctx.drawImage(img, 0, 0);
+    ctx.restore();
+}
+
+// Zoom centrado en la posición del mouse
+canvas.addEventListener("wheel", function(event) {
+    if (!isImageLoaded) return;
+    event.preventDefault();
+
+    let zoomFactor = event.deltaY > 0 ? 0.95 : 1.05; // Zoom más suave
+    let newScale = scale * zoomFactor;
+
+    if (newScale >= minScale && newScale <= maxScale) {
+        let rect = canvas.getBoundingClientRect();
+        let mouseX = (event.clientX - rect.left - imgX) / scale;
+        let mouseY = (event.clientY - rect.top - imgY) / scale;
+
+        scale = newScale;
+        imgX = event.clientX - rect.left - mouseX * scale;
+        imgY = event.clientY - rect.top - mouseY * scale;
+
+        drawCanvas();
+    }
+});
+
+// Movimiento de la imagen con clic y arrastre (botón central)
+canvas.addEventListener("mousedown", function(event) {
+    if (!isImageLoaded) return;
+
+    let rect = canvas.getBoundingClientRect();
+    let scrollX = container.scrollLeft;
+    let scrollY = container.scrollTop;
+
+    if (event.button === 1) { // Botón del scroll (movimiento de la imagen)
+        isDragging = true;
+        offsetX = event.clientX - imgX;
+        offsetY = event.clientY - imgY;
+        event.preventDefault();
+    } else if (event.button === 0) { // Botón izquierdo (selección)
+        let transform = ctx.getTransform();
+        startX = (event.clientX - rect.left - transform.e) / transform.a;
+        startY = (event.clientY - rect.top - transform.f) / transform.d;
+        isSelecting = true;
+    }
+});
+
+canvas.addEventListener("mousemove", function(event) {
+    if (isDragging) { // Mover imagen
+        imgX = event.clientX - offsetX;
+        imgY = event.clientY - offsetY;
+        drawCanvas();
+    } else if (isSelecting) { // Dibujar selección
+        let rect = canvas.getBoundingClientRect();
+        let transform = ctx.getTransform();
+        let x = (event.clientX - rect.left - transform.e) / transform.a;
+        let y = (event.clientY - rect.top - transform.f) / transform.d;
+        let width = Math.abs(x - startX);
+        let height = Math.abs(y - startY);
+
+        drawCanvas();
+        ctx.setLineDash([6, 6]);
+        ctx.strokeStyle = "black";
+        ctx.lineWidth = 2;
+        ctx.strokeRect(Math.min(startX, x), Math.min(startY, y), width, height);
+    }
+});
+
+canvas.addEventListener("mouseup", function(event) {
+    if (isDragging) {
+        isDragging = false;
+    } else if (isSelecting) {
+        let rect = canvas.getBoundingClientRect();
+        let transform = ctx.getTransform();
+        endX = (event.clientX - rect.left - transform.e) / transform.a;
+        endY = (event.clientY - rect.top - transform.f) / transform.d;
+        isSelecting = false;
+
+        document.getElementById("cropButton").disabled = (startX === endX || startY === endY);
+    }
+});
+
+// **🔥 Recorte final y preciso 🔥**
+document.getElementById("cropButton").addEventListener("click", function() {
     if (!isImageLoaded) return;
 
     let cropWidth = Math.abs(endX - startX);
