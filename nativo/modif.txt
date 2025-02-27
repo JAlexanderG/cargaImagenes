@@ -1,37 +1,102 @@
-private Bitmap ResizeImage(Bitmap image)
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+
+public class LeadToolsProcessor
 {
-    int newWidth = image.Width;
-    int newHeight = image.Height;
+    private const int MAXBYTE_FIRMA = 2048; // Límite de tamaño en bytes
+    private const int MIN_WIDTH = 100; // Evitar que se haga demasiado pequeña
+    private const int MIN_HEIGHT = 100;
 
-    // 🔥 Convertir a 24bpp antes de redimensionar
-    Bitmap tempImage = ConvertTo24bpp(image);
-
-    // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
-    double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (tempImage.Width * tempImage.Height)) + 0.1;
-    newWidth = (int)(tempImage.Width * scaleFactor);
-    newHeight = (int)(tempImage.Height * scaleFactor);
-
-    // Evitar tamaños demasiado pequeños
-    if (newWidth < 100) newWidth = 100;
-    if (newHeight < 100) newHeight = 100;
-
-    Bitmap resizedImage = new Bitmap(newWidth, newHeight);
-    using (Graphics g = Graphics.FromImage(resizedImage))
+    public byte[] ProcessImage(Bitmap originalImage)
     {
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-        g.DrawImage(tempImage, 0, 0, newWidth, newHeight);
+        // 🔥 1️⃣ Convertimos la imagen a 8bpp para compatibilidad con VB6
+        using (Bitmap bwImage = ConvertTo8bpp(originalImage))
+        {
+            // 🔥 2️⃣ Ajustamos el tamaño sin perder calidad
+            Bitmap resizedImage = ResizeImage(bwImage);
+
+            // 🔥 3️⃣ Guardamos como BMP y verificamos que no supere 2048 bytes
+            byte[] finalImageData = SaveBmpAndCheckSize(resizedImage);
+
+            return finalImageData;
+        }
     }
 
-    // 🔥 Convertir de vuelta a 1bpp después de redimensionar
-    return ConvertTo1bpp(resizedImage);
-}
-
-private Bitmap ConvertTo24bpp(Bitmap original)
-{
-    Bitmap newBitmap = new Bitmap(original.Width, original.Height, PixelFormat.Format24bppRgb);
-    using (Graphics g = Graphics.FromImage(newBitmap))
+    // **🔥 1️⃣ Convertir a 8bpp (Escala de grises con paleta de colores)**
+    private Bitmap ConvertTo8bpp(Bitmap original)
     {
-        g.DrawImage(original, 0, 0);
+        Bitmap bmp8bpp = new Bitmap(original.Width, original.Height, PixelFormat.Format8bppIndexed);
+
+        // 🔥 Configurar paleta de grises
+        ColorPalette palette = bmp8bpp.Palette;
+        for (int i = 0; i < 256; i++)
+        {
+            palette.Entries[i] = Color.FromArgb(i, i, i);
+        }
+        bmp8bpp.Palette = palette;
+
+        using (Graphics g = Graphics.FromImage(bmp8bpp))
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(original, new Rectangle(0, 0, original.Width, original.Height));
+        }
+
+        return bmp8bpp;
     }
-    return newBitmap;
+
+    // **🔥 2️⃣ Ajustar Tamaño de Imagen Sin Perder Calidad**
+    private Bitmap ResizeImage(Bitmap image)
+    {
+        int newWidth = image.Width;
+        int newHeight = image.Height;
+
+        // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
+        double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (image.Width * image.Height)) + 0.1;
+        newWidth = (int)(image.Width * scaleFactor);
+        newHeight = (int)(image.Height * scaleFactor);
+
+        // Evitar tamaños demasiado pequeños
+        if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
+        if (newHeight < MIN_HEIGHT) newHeight = MIN_HEIGHT;
+
+        Bitmap resizedImage = new Bitmap(newWidth, newHeight, PixelFormat.Format8bppIndexed);
+        using (Graphics g = Graphics.FromImage(resizedImage))
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(image, 0, 0, newWidth, newHeight);
+        }
+
+        return resizedImage;
+    }
+
+    // **🔥 3️⃣ Guardar como BMP y Verificar Tamaño**
+    private byte[] SaveBmpAndCheckSize(Bitmap image)
+    {
+        using (var ms = new MemoryStream())
+        {
+            image.Save(ms, ImageFormat.Bmp);
+            byte[] bmpData = ms.ToArray();
+
+            // 🔥 Si la imagen sigue superando los 2048 bytes, reducir más
+            while (bmpData.Length > MAXBYTE_FIRMA)
+            {
+                int newWidth = (int)(image.Width * 0.95);
+                int newHeight = (int)(image.Height * 0.95);
+
+                if (newWidth < MIN_WIDTH || newHeight < MIN_HEIGHT)
+                    break; // Evitar reducir demasiado
+
+                image = new Bitmap(image, new Size(newWidth, newHeight));
+                using (var tempStream = new MemoryStream())
+                {
+                    image.Save(tempStream, ImageFormat.Bmp);
+                    bmpData = tempStream.ToArray();
+                }
+            }
+
+            return bmpData;
+        }
+    }
 }
