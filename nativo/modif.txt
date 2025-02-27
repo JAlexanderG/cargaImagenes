@@ -1,57 +1,39 @@
-private Bitmap ConvertTo8bpp(Bitmap original)
+private Bitmap ResizeImage(Bitmap image)
 {
-    // 🔥 1️⃣ Convertir la imagen a 24bpp primero para evitar errores con gráficos en imágenes indexadas
-    Bitmap tempImage = new Bitmap(original.Width, original.Height, PixelFormat.Format24bppRgb);
-    using (Graphics g = Graphics.FromImage(tempImage))
+    int newWidth = image.Width;
+    int newHeight = image.Height;
+
+    // 🔥 Convertir a 24bpp antes de redimensionar
+    Bitmap tempImage = ConvertTo24bpp(image);
+
+    // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
+    double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (tempImage.Width * tempImage.Height)) + 0.1;
+    newWidth = (int)(tempImage.Width * scaleFactor);
+    newHeight = (int)(tempImage.Height * scaleFactor);
+
+    // Evitar tamaños demasiado pequeños
+    if (newWidth < 100) newWidth = 100;
+    if (newHeight < 100) newHeight = 100;
+
+    Bitmap resizedImage = new Bitmap(newWidth, newHeight, PixelFormat.Format24bppRgb);
+    using (Graphics g = Graphics.FromImage(resizedImage))
+    {
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.DrawImage(tempImage, 0, 0, newWidth, newHeight);
+    }
+
+    tempImage.Dispose(); // Limpiar memoria
+
+    // 🔥 Convertir de vuelta a 8bpp después de redimensionar
+    return ConvertTo8bpp(resizedImage);
+}
+
+private Bitmap ConvertTo24bpp(Bitmap original)
+{
+    Bitmap newBitmap = new Bitmap(original.Width, original.Height, PixelFormat.Format24bppRgb);
+    using (Graphics g = Graphics.FromImage(newBitmap))
     {
         g.DrawImage(original, 0, 0);
     }
-
-    // 🔥 2️⃣ Crear la imagen final en 8bpp
-    Bitmap bmp8bpp = new Bitmap(tempImage.Width, tempImage.Height, PixelFormat.Format8bppIndexed);
-
-    // 🔥 3️⃣ Configurar paleta de grises en la imagen `8bpp`
-    ColorPalette palette = bmp8bpp.Palette;
-    for (int i = 0; i < 256; i++)
-    {
-        palette.Entries[i] = Color.FromArgb(i, i, i);
-    }
-    bmp8bpp.Palette = palette;
-
-    // 🔥 4️⃣ Copiar los píxeles manualmente
-    BitmapData originalData = tempImage.LockBits(new Rectangle(0, 0, tempImage.Width, tempImage.Height),
-                                                 ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-    BitmapData bwData = bmp8bpp.LockBits(new Rectangle(0, 0, bmp8bpp.Width, bmp8bpp.Height),
-                                         ImageLockMode.WriteOnly, PixelFormat.Format8bppIndexed);
-
-    int bytesPerPixel = 3; // 24bpp (RGB) → 3 bytes por píxel
-    int strideOriginal = originalData.Stride;
-    int strideBw = bwData.Stride;
-    int threshold = 128; // 🔥 Umbral para blanco/negro
-
-    unsafe
-    {
-        byte* originalPtr = (byte*)originalData.Scan0;
-        byte* bwPtr = (byte*)bwData.Scan0;
-
-        for (int y = 0; y < bmp8bpp.Height; y++)
-        {
-            for (int x = 0; x < bmp8bpp.Width; x++)
-            {
-                int index = (y * strideOriginal) + (x * bytesPerPixel);
-                byte gray = (byte)(0.299 * originalPtr[index + 2] +
-                                   0.587 * originalPtr[index + 1] +
-                                   0.114 * originalPtr[index]);
-
-                int bwIndex = (y * strideBw) + x;
-                bwPtr[bwIndex] = gray; // Asignamos el valor en escala de grises
-            }
-        }
-    }
-
-    bmp8bpp.UnlockBits(bwData);
-    tempImage.UnlockBits(originalData);
-    tempImage.Dispose(); // Limpiar memoria
-
-    return bmp8bpp;
+    return newBitmap;
 }
