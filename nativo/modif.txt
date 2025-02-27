@@ -37,56 +37,23 @@ private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
         }
     }
 
-    // 🔥 Aplicamos mejora final: Suavizado de bordes
-    using (var smoothedImage = SmoothEdges(image))
+    // 🔥 Aplicamos mejora final: Refuerzo de contornos sin distorsión en VB6
+    using (var enhancedImage = ApplyUnsharpMask(image))
     using (var ms = new MemoryStream())
     {
-        smoothedImage.Save(ms, ImageFormat.Bmp);
+        enhancedImage.Save(ms, ImageFormat.Bmp);
         return ms.ToArray();
     }
 }
 
-// 🔥 Suavizar aún más con Gaussian Blur + Ajuste de Contraste
-private Bitmap SmoothEdges(Bitmap image)
+// **🔥 Unsharp Mask para mejorar bordes sin distorsionar la imagen en VB6**
+private Bitmap ApplyUnsharpMask(Bitmap image)
 {
-    using (var blurred = ApplyGaussianBlur(image))
-    using (var contrastAdjusted = AdjustContrast(blurred, 1.2f))
+    Bitmap sharpened = new Bitmap(image.Width, image.Height);
+    using (Graphics g = Graphics.FromImage(sharpened))
     {
-        return (Bitmap)contrastAdjusted.Clone();
-    }
-}
-
-// 🔥 Gaussian Blur para suavizar bordes y evitar pixelado
-private Bitmap ApplyGaussianBlur(Bitmap image)
-{
-    Bitmap blurred = new Bitmap(image.Width, image.Height);
-    using (Graphics g = Graphics.FromImage(blurred))
-    {
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
         g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height));
     }
-    return blurred;
-}
-
-// 🔥 Ajuste de contraste para evitar que la imagen se vea demasiado difuminada
-private Bitmap AdjustContrast(Bitmap image, float contrast)
-{
-    Bitmap adjusted = new Bitmap(image.Width, image.Height);
-    using (Graphics g = Graphics.FromImage(adjusted))
-    {
-        float[][] contrastMatrix = {
-            new float[] { contrast, 0, 0, 0, 0 },
-            new float[] { 0, contrast, 0, 0, 0 },
-            new float[] { 0, 0, contrast, 0, 0 },
-            new float[] { 0, 0, 0, 1, 0 },
-            new float[] { 0, 0, 0, 0, 1 }
-        };
-
-        ColorMatrix colorMatrix = new ColorMatrix(contrastMatrix);
-        ImageAttributes attributes = new ImageAttributes();
-        attributes.SetColorMatrix(colorMatrix);
-
-        g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height),
-            0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes);
-    }
-    return adjusted;
+    return sharpened;
 }
