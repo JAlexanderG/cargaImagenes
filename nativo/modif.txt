@@ -1,22 +1,45 @@
+
     using (var inputStream = image.OpenReadStream())
     using (var originalImage = new Bitmap(inputStream))
     {
         int width = originalImage.Width;
         int height = originalImage.Height;
 
-        // 🔥 Crear una imagen en formato 1bpp (monocromático)
+        // 🔥 Crear una imagen en formato 1bpp (blanco y negro)
         using (var monochromeImage = new Bitmap(width, height, PixelFormat.Format1bppIndexed))
         {
-            // 🔥 Copiar la imagen original a la monocromática pixel por pixel
+            // 🔥 Bloquear los bits para acceder directamente a la memoria
+            BitmapData bmpData = monochromeImage.LockBits(
+                new Rectangle(0, 0, width, height),
+                ImageLockMode.WriteOnly,
+                PixelFormat.Format1bppIndexed);
+
+            int stride = bmpData.Stride;
+            IntPtr scan0 = bmpData.Scan0;
+            byte[] pixelData = new byte[stride * height];
+
+            // 🔥 Convertir cada píxel a blanco o negro
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
                 {
                     Color pixelColor = originalImage.GetPixel(x, y);
                     int grayscale = (int)(pixelColor.R * 0.3 + pixelColor.G * 0.59 + pixelColor.B * 0.11);
-                    monochromeImage.SetPixel(x, y, grayscale < 128 ? Color.Black : Color.White);
+                    bool isBlack = grayscale < 128; // Si el valor es menor a 128, lo hacemos negro
+
+                    int byteIndex = (y * stride) + (x / 8);
+                    int bitIndex = 7 - (x % 8);
+
+                    if (isBlack)
+                    {
+                        pixelData[byteIndex] |= (byte)(1 << bitIndex);
+                    }
                 }
             }
+
+            // 🔥 Escribir los datos en la imagen y desbloquear
+            System.Runtime.InteropServices.Marshal.Copy(pixelData, 0, scan0, pixelData.Length);
+            monochromeImage.UnlockBits(bmpData);
 
             // 🔥 Guardar en memoria como BMP
             using (var bmpMemoryStream = new MemoryStream())
