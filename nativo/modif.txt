@@ -1,45 +1,43 @@
-private Bitmap ConvertTo8bpp(Bitmap original)
+private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
 {
-    // Crear un nuevo bitmap de 8bpp
-    Bitmap bmp8bpp = new Bitmap(original.Width, original.Height, PixelFormat.Format8bppIndexed);
-    ColorPalette palette = bmp8bpp.Palette;
+    int width = image.Width;
+    int height = image.Height;
+    const int bmpHeaderSize = 54;
 
-    // 🔥 Generar una paleta de 256 tonos de gris
-    for (int i = 0; i < 256; i++)
+    while (true)
     {
-        palette.Entries[i] = Color.FromArgb(i, i, i);
-    }
-    bmp8bpp.Palette = palette;
-
-    // 🔥 Copiar píxeles manualmente usando LockBits
-    Rectangle rect = new Rectangle(0, 0, original.Width, original.Height);
-    BitmapData bmpData = bmp8bpp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format8bppIndexed);
-    BitmapData originalData = original.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-
-    int strideSrc = originalData.Stride;
-    int strideDest = bmpData.Stride;
-
-    unsafe
-    {
-        byte* ptrSrc = (byte*)originalData.Scan0;
-        byte* ptrDest = (byte*)bmpData.Scan0;
-
-        for (int y = 0; y < original.Height; y++)
+        using (var ms = new MemoryStream())
         {
-            for (int x = 0; x < original.Width; x++)
-            {
-                byte gray = (byte)(ptrSrc[0] * 0.11 + ptrSrc[1] * 0.59 + ptrSrc[2] * 0.3);
-                ptrDest[x] = gray;
+            image.Save(ms, ImageFormat.Bmp);
+            byte[] imageData = ms.ToArray();
+            int dataSize = imageData.Length - bmpHeaderSize;
 
-                ptrSrc += 3; // Avanzar en la imagen original (24bpp → RGB usa 3 bytes por píxel)
-            }
-            ptrSrc += strideSrc - (original.Width * 3);
-            ptrDest += strideDest - original.Width;
+            // ✅ Si la imagen ya cumple con los límites, la retornamos
+            if (imageData.Length <= maxFileSize && dataSize <= maxDataSize)
+                return imageData;
+        }
+
+        // 🚨 Evitamos reducir demasiado la imagen
+        if (width < 50 || height < 50)
+        {
+            Console.WriteLine("⚠️ La imagen no puede reducirse más sin perder contenido.");
+            break; // Nos quedamos con el tamaño más cercano posible
+        }
+
+        // 🔥 Reducimos la imagen en pasos más grandes si sigue fuera del límite
+        width = (int)(width * 0.85);
+        height = (int)(height * 0.85);
+
+        using (var resizedImage = new Bitmap(image, new Size(width, height)))
+        {
+            image = (Bitmap)resizedImage.Clone();
         }
     }
 
-    bmp8bpp.UnlockBits(bmpData);
-    original.UnlockBits(originalData);
-
-    return bmp8bpp;
+    // 🔥 Retornamos la versión más reducida posible si no logramos llegar a 2048 bytes
+    using (var ms = new MemoryStream())
+    {
+        image.Save(ms, ImageFormat.Bmp);
+        return ms.ToArray();
+    }
 }
