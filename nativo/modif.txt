@@ -1,175 +1,109 @@
-using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-
-// 🔥 Modelo de la tabla en la base de datos
-public class ImagenEntity
+public byte[] ProcessImage(IFormFile file)
 {
-    public int Id { get; set; } // Clave primaria
-    public byte[] ImagenBytes { get; set; } // Campo VARBINARY o IMAGE
-}
-
-// 🔥 Contexto de Entity Framework (base de datos)
-public class AppDbContext : DbContext
-{
-    public DbSet<ImagenEntity> Imagenes { get; set; }
-
-    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
-}
-
-// 🔥 Controlador en ASP.NET Core MVC
-[Route("api/imagen")]
-[ApiController]
-public class ImagenController : ControllerBase
-{
-    private readonly AppDbContext _dbContext;
-
-    public ImagenController(AppDbContext dbContext)
+    using (var inputStream = file.OpenReadStream())
+    using (var originalImage = new Bitmap(inputStream))
     {
-        _dbContext = dbContext;
-    }
-
-    [HttpPost("guardar")]
-    public async Task<IActionResult> Guardar([FromForm] IFormFile file)
-    {
-        if (file == null || file.Length == 0)
-            return BadRequest("No se recibió ninguna imagen.");
-
-        // 🔥 Procesamos la imagen antes de guardarla
-        byte[] imagenProcesada = new ImageProcessor().ProcessImage(file);
-
-        // 🔥 Guardamos en la base de datos
-        var nuevaImagen = new ImagenEntity
+        // 🔥 1. Convertimos a escala de grises con más precisión
+        using (var grayscaleImage = ConvertToGrayscale(originalImage))
         {
-            ImagenBytes = imagenProcesada
-        };
-
-        _dbContext.Imagenes.Add(nuevaImagen);
-        await _dbContext.SaveChangesAsync();
-
-        return Ok(new { message = "Imagen guardada correctamente", id = nuevaImagen.Id });
-    }
-
-    // 🔥 Método para recuperar una imagen desde la base de datos
-    [HttpGet("obtener/{id}")]
-    public async Task<IActionResult> Obtener(int id)
-    {
-        var imagen = await _dbContext.Imagenes.FindAsync(id);
-        if (imagen == null)
-            return NotFound("Imagen no encontrada.");
-
-        return File(imagen.ImagenBytes, "image/bmp");
-    }
-}
-
-// 🔥 Procesador de imágenes (la clase ImageProcessor que ya hicimos)
-public class ImageProcessor
-{
-    public byte[] ProcessImage(IFormFile file)
-    {
-        using (var inputStream = file.OpenReadStream())
-        using (var originalImage = new Bitmap(inputStream))
-        {
-            // 🔥 1. Convertir a escala de grises
-            using (var grayscaleImage = ConvertToGrayscale(originalImage))
+            // 🔥 2. Aplicamos umbral adaptativo para mejorar trazos
+            using (var enhancedImage = AdaptiveThreshold(grayscaleImage))
             {
-                // 🔥 2. Refuerzo de negro
-                using (var enhancedImage = EnhanceBlack(grayscaleImage))
-                {
-                    // 🔥 3. Ajustar tamaño para no superar los 2048 bytes
-                    byte[] finalImage = EnsureMaxSize(enhancedImage, 2048, 15 * 1024);
-                    return finalImage;
-                }
+                // 🔥 3. Reducción de tamaño más suave
+                byte[] finalImage = EnsureMaxSize(enhancedImage, 2048, 15 * 1024);
+                return finalImage;
             }
         }
     }
+}
 
-    private Bitmap ConvertToGrayscale(Bitmap original)
+// **1️⃣ Convertir a escala de grises con más precisión**
+private Bitmap ConvertToGrayscale(Bitmap original)
+{
+    Bitmap grayscale = new Bitmap(original.Width, original.Height);
+    using (Graphics g = Graphics.FromImage(grayscale))
     {
-        Bitmap grayscale = new Bitmap(original.Width, original.Height);
-        using (Graphics g = Graphics.FromImage(grayscale))
-        {
-            ColorMatrix colorMatrix = new ColorMatrix(new float[][] {
-                new float[] {0.3f, 0.3f, 0.3f, 0, 0},
-                new float[] {0.59f, 0.59f, 0.59f, 0, 0},
-                new float[] {0.11f, 0.11f, 0.11f, 0, 0},
-                new float[] {0, 0, 0, 1, 0},
-                new float[] {0, 0, 0, 0, 1}
-            });
+        ColorMatrix colorMatrix = new ColorMatrix(new float[][] {
+            new float[] {0.3f, 0.3f, 0.3f, 0, 0},
+            new float[] {0.59f, 0.59f, 0.59f, 0, 0},
+            new float[] {0.11f, 0.11f, 0.11f, 0, 0},
+            new float[] {0, 0, 0, 1, 0},
+            new float[] {0, 0, 0, 0, 1}
+        });
 
-            ImageAttributes attributes = new ImageAttributes();
-            attributes.SetColorMatrix(colorMatrix);
-            g.DrawImage(original, new Rectangle(0, 0, original.Width, original.Height),
-                0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
-        }
-        return grayscale;
+        ImageAttributes attributes = new ImageAttributes();
+        attributes.SetColorMatrix(colorMatrix);
+        g.DrawImage(original, new Rectangle(0, 0, original.Width, original.Height),
+            0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
     }
+    return grayscale;
+}
 
-    private Bitmap EnhanceBlack(Bitmap grayscaleImage)
+// **2️⃣ Aplicar Umbral Adaptativo (mejor presencia de negro)**
+private Bitmap AdaptiveThreshold(Bitmap grayscaleImage)
+{
+    Bitmap enhanced = new Bitmap(grayscaleImage.Width, grayscaleImage.Height);
+    for (int y = 0; y < grayscaleImage.Height; y++)
     {
-        Bitmap enhanced = new Bitmap(grayscaleImage.Width, grayscaleImage.Height);
-        for (int y = 0; y < grayscaleImage.Height; y++)
+        for (int x = 0; x < grayscaleImage.Width; x++)
         {
-            for (int x = 0; x < grayscaleImage.Width; x++)
-            {
-                Color pixel = grayscaleImage.GetPixel(x, y);
-                int intensity = pixel.R;
+            Color pixel = grayscaleImage.GetPixel(x, y);
+            int intensity = pixel.R; // Escala de grises
 
-                if (intensity < 100)
-                {
-                    enhanced.SetPixel(x, y, Color.Black);
-                }
-                else if (intensity > 180)
-                {
-                    enhanced.SetPixel(x, y, Color.White);
-                }
-                else
-                {
-                    enhanced.SetPixel(x, y, Color.FromArgb(intensity, intensity, intensity));
-                }
+            // 🔥 Umbral dinámico: reforzamos lo oscuro sin eliminar grises claros
+            if (intensity < 120)
+            {
+                enhanced.SetPixel(x, y, Color.Black);
+            }
+            else if (intensity > 200)
+            {
+                enhanced.SetPixel(x, y, Color.White);
+            }
+            else
+            {
+                int adjust = (intensity - 120) * 2;
+                int newGray = Math.Max(0, Math.Min(255, adjust));
+                enhanced.SetPixel(x, y, Color.FromArgb(newGray, newGray, newGray));
             }
         }
-        return enhanced;
     }
+    return enhanced;
+}
 
-    private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
+// **3️⃣ Reducción de tamaño más suave**
+private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
+{
+    int width = image.Width;
+    int height = image.Height;
+
+    while (true)
     {
-        int width = image.Width;
-        int height = image.Height;
-
-        while (true)
+        using (var ms = new MemoryStream())
         {
-            using (var ms = new MemoryStream())
+            image.Save(ms, ImageFormat.Bmp);
+            byte[] imageData = ms.ToArray();
+
+            if (imageData.Length <= maxFileSize)
             {
-                image.Save(ms, ImageFormat.Bmp);
-                byte[] imageData = ms.ToArray();
+                int bmpHeaderSize = 54;
+                int dataSize = imageData.Length - bmpHeaderSize;
 
-                if (imageData.Length <= maxFileSize)
+                if (dataSize <= maxDataSize)
                 {
-                    int bmpHeaderSize = 54;
-                    int dataSize = imageData.Length - bmpHeaderSize;
-
-                    if (dataSize <= maxDataSize)
-                    {
-                        return imageData;
-                    }
+                    return imageData;
                 }
+            }
 
-                width = (int)(width * 0.9);
-                height = (int)(height * 0.9);
+            // 🔥 Reducción más suave: 5% por paso
+            width = (int)(width * 0.95);
+            height = (int)(height * 0.95);
 
-                if (width < 1 || height < 1)
-                    throw new Exception("No se puede reducir más la imagen sin perder contenido.");
+            if (width < 50 || height < 50) // No reducir demasiado
+                throw new Exception("No se puede reducir más la imagen sin perder contenido.");
 
-                using (var resizedImage = new Bitmap(image, new Size(width, height)))
-                {
-                    image = (Bitmap)resizedImage.Clone();
-                }
+            using (var resizedImage = new Bitmap(image, new Size(width, height)))
+            {
+                image = (Bitmap)resizedImage.Clone();
             }
         }
     }
