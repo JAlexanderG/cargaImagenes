@@ -1,61 +1,6 @@
-private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
-{
-    int width = image.Width;
-    int height = image.Height;
-
-    // 🔥 1. Convertimos la imagen a formato 8bpp para compatibilidad con VB6
-    using (var compatibleBmp = ConvertTo8bpp(image))
-    {
-        using (var ms = new MemoryStream())
-        {
-            compatibleBmp.Save(ms, ImageFormat.Bmp);
-            byte[] imageData = ms.ToArray();
-
-            int bmpHeaderSize = 54;
-            int dataSize = imageData.Length - bmpHeaderSize;
-
-            // ✅ Si ya cumple los límites, la retornamos
-            if (imageData.Length <= maxFileSize && dataSize <= maxDataSize)
-                return imageData;
-        }
-
-        // 🔥 2. Reducción de tamaño más controlada
-        while (true)
-        {
-            width = (int)(width * 0.95);
-            height = (int)(height * 0.95);
-
-            if (width < 100 || height < 100)
-            {
-                Console.WriteLine("⚠️ La imagen no puede reducirse más sin perder compatibilidad.");
-                break;
-            }
-
-            using (var resizedImage = new Bitmap(compatibleBmp, new Size(width, height)))
-            using (var ms = new MemoryStream())
-            {
-                resizedImage.Save(ms, ImageFormat.Bmp);
-                byte[] imageData = ms.ToArray();
-
-                int dataSize = imageData.Length - 54;
-
-                if (imageData.Length <= maxFileSize && dataSize <= maxDataSize)
-                    return imageData;
-            }
-        }
-    }
-
-    // 🔥 Si no logramos cumplir el límite, retornamos la versión más reducida posible
-    using (var ms = new MemoryStream())
-    {
-        image.Save(ms, ImageFormat.Bmp);
-        return ms.ToArray();
-    }
-}
-
-// 🔥 Convertir imagen a 8bpp indexado con paleta para compatibilidad con VB6
 private Bitmap ConvertTo8bpp(Bitmap original)
 {
+    // Crear un nuevo bitmap de 8bpp
     Bitmap bmp8bpp = new Bitmap(original.Width, original.Height, PixelFormat.Format8bppIndexed);
     ColorPalette palette = bmp8bpp.Palette;
 
@@ -66,10 +11,35 @@ private Bitmap ConvertTo8bpp(Bitmap original)
     }
     bmp8bpp.Palette = palette;
 
-    using (Graphics g = Graphics.FromImage(bmp8bpp))
+    // 🔥 Copiar píxeles manualmente usando LockBits
+    Rectangle rect = new Rectangle(0, 0, original.Width, original.Height);
+    BitmapData bmpData = bmp8bpp.LockBits(rect, ImageLockMode.WriteOnly, PixelFormat.Format8bppIndexed);
+    BitmapData originalData = original.LockBits(rect, ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+
+    int strideSrc = originalData.Stride;
+    int strideDest = bmpData.Stride;
+
+    unsafe
     {
-        g.DrawImage(original, new Rectangle(0, 0, bmp8bpp.Width, bmp8bpp.Height));
+        byte* ptrSrc = (byte*)originalData.Scan0;
+        byte* ptrDest = (byte*)bmpData.Scan0;
+
+        for (int y = 0; y < original.Height; y++)
+        {
+            for (int x = 0; x < original.Width; x++)
+            {
+                byte gray = (byte)(ptrSrc[0] * 0.11 + ptrSrc[1] * 0.59 + ptrSrc[2] * 0.3);
+                ptrDest[x] = gray;
+
+                ptrSrc += 3; // Avanzar en la imagen original (24bpp → RGB usa 3 bytes por píxel)
+            }
+            ptrSrc += strideSrc - (original.Width * 3);
+            ptrDest += strideDest - original.Width;
+        }
     }
+
+    bmp8bpp.UnlockBits(bmpData);
+    original.UnlockBits(originalData);
 
     return bmp8bpp;
 }
