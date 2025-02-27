@@ -1,31 +1,175 @@
-private byte[] EnsureMaxSize(System.Drawing.Image originalImage, int maxSize)
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Mvc;
+using Microsoft.EntityFrameworkCore;
+
+// 🔥 Modelo de la tabla en la base de datos
+public class ImagenEntity
 {
-    int width = originalImage.Width;
-    int height = originalImage.Height;
+    public int Id { get; set; } // Clave primaria
+    public byte[] ImagenBytes { get; set; } // Campo VARBINARY o IMAGE
+}
 
-    // 🔥 Reducción progresiva de tamaño hasta que esté dentro del límite
-    while (true)
+// 🔥 Contexto de Entity Framework (base de datos)
+public class AppDbContext : DbContext
+{
+    public DbSet<ImagenEntity> Imagenes { get; set; }
+
+    public AppDbContext(DbContextOptions<AppDbContext> options) : base(options) { }
+}
+
+// 🔥 Controlador en ASP.NET Core MVC
+[Route("api/imagen")]
+[ApiController]
+public class ImagenController : ControllerBase
+{
+    private readonly AppDbContext _dbContext;
+
+    public ImagenController(AppDbContext dbContext)
     {
-        using (var ms = new MemoryStream())
+        _dbContext = dbContext;
+    }
+
+    [HttpPost("guardar")]
+    public async Task<IActionResult> Guardar([FromForm] IFormFile file)
+    {
+        if (file == null || file.Length == 0)
+            return BadRequest("No se recibió ninguna imagen.");
+
+        // 🔥 Procesamos la imagen antes de guardarla
+        byte[] imagenProcesada = new ImageProcessor().ProcessImage(file);
+
+        // 🔥 Guardamos en la base de datos
+        var nuevaImagen = new ImagenEntity
         {
-            // Guardamos la imagen en BMP en el tamaño actual
-            originalImage.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
-            byte[] imageData = ms.ToArray();
+            ImagenBytes = imagenProcesada
+        };
 
-            if (imageData.Length <= maxSize)
-                return imageData; // ✅ Ya cumple con el tamaño, retornamos.
+        _dbContext.Imagenes.Add(nuevaImagen);
+        await _dbContext.SaveChangesAsync();
 
-            // Si aún supera el límite, reducimos en un 10%
-            width = (int)(width * 0.9);
-            height = (int)(height * 0.9);
+        return Ok(new { message = "Imagen guardada correctamente", id = nuevaImagen.Id });
+    }
 
-            if (width < 1 || height < 1)
-                throw new Exception("No se puede reducir más la imagen sin perder contenido.");
+    // 🔥 Método para recuperar una imagen desde la base de datos
+    [HttpGet("obtener/{id}")]
+    public async Task<IActionResult> Obtener(int id)
+    {
+        var imagen = await _dbContext.Imagenes.FindAsync(id);
+        if (imagen == null)
+            return NotFound("Imagen no encontrada.");
 
-            // Crear una nueva imagen redimensionada
-            using (var resizedImage = new Bitmap(originalImage, new Size(width, height)))
+        return File(imagen.ImagenBytes, "image/bmp");
+    }
+}
+
+// 🔥 Procesador de imágenes (la clase ImageProcessor que ya hicimos)
+public class ImageProcessor
+{
+    public byte[] ProcessImage(IFormFile file)
+    {
+        using (var inputStream = file.OpenReadStream())
+        using (var originalImage = new Bitmap(inputStream))
+        {
+            // 🔥 1. Convertir a escala de grises
+            using (var grayscaleImage = ConvertToGrayscale(originalImage))
             {
-                originalImage = (System.Drawing.Image)resizedImage.Clone();
+                // 🔥 2. Refuerzo de negro
+                using (var enhancedImage = EnhanceBlack(grayscaleImage))
+                {
+                    // 🔥 3. Ajustar tamaño para no superar los 2048 bytes
+                    byte[] finalImage = EnsureMaxSize(enhancedImage, 2048, 15 * 1024);
+                    return finalImage;
+                }
+            }
+        }
+    }
+
+    private Bitmap ConvertToGrayscale(Bitmap original)
+    {
+        Bitmap grayscale = new Bitmap(original.Width, original.Height);
+        using (Graphics g = Graphics.FromImage(grayscale))
+        {
+            ColorMatrix colorMatrix = new ColorMatrix(new float[][] {
+                new float[] {0.3f, 0.3f, 0.3f, 0, 0},
+                new float[] {0.59f, 0.59f, 0.59f, 0, 0},
+                new float[] {0.11f, 0.11f, 0.11f, 0, 0},
+                new float[] {0, 0, 0, 1, 0},
+                new float[] {0, 0, 0, 0, 1}
+            });
+
+            ImageAttributes attributes = new ImageAttributes();
+            attributes.SetColorMatrix(colorMatrix);
+            g.DrawImage(original, new Rectangle(0, 0, original.Width, original.Height),
+                0, 0, original.Width, original.Height, GraphicsUnit.Pixel, attributes);
+        }
+        return grayscale;
+    }
+
+    private Bitmap EnhanceBlack(Bitmap grayscaleImage)
+    {
+        Bitmap enhanced = new Bitmap(grayscaleImage.Width, grayscaleImage.Height);
+        for (int y = 0; y < grayscaleImage.Height; y++)
+        {
+            for (int x = 0; x < grayscaleImage.Width; x++)
+            {
+                Color pixel = grayscaleImage.GetPixel(x, y);
+                int intensity = pixel.R;
+
+                if (intensity < 100)
+                {
+                    enhanced.SetPixel(x, y, Color.Black);
+                }
+                else if (intensity > 180)
+                {
+                    enhanced.SetPixel(x, y, Color.White);
+                }
+                else
+                {
+                    enhanced.SetPixel(x, y, Color.FromArgb(intensity, intensity, intensity));
+                }
+            }
+        }
+        return enhanced;
+    }
+
+    private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
+    {
+        int width = image.Width;
+        int height = image.Height;
+
+        while (true)
+        {
+            using (var ms = new MemoryStream())
+            {
+                image.Save(ms, ImageFormat.Bmp);
+                byte[] imageData = ms.ToArray();
+
+                if (imageData.Length <= maxFileSize)
+                {
+                    int bmpHeaderSize = 54;
+                    int dataSize = imageData.Length - bmpHeaderSize;
+
+                    if (dataSize <= maxDataSize)
+                    {
+                        return imageData;
+                    }
+                }
+
+                width = (int)(width * 0.9);
+                height = (int)(height * 0.9);
+
+                if (width < 1 || height < 1)
+                    throw new Exception("No se puede reducir más la imagen sin perder contenido.");
+
+                using (var resizedImage = new Bitmap(image, new Size(width, height)))
+                {
+                    image = (Bitmap)resizedImage.Clone();
+                }
             }
         }
     }
