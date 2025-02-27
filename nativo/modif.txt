@@ -1,57 +1,51 @@
-Function AddSignDesdeArchivo(codigo As String, id As String, rutaImagen As String) As String
-    Dim Pos As Long
-    Dim PosActual As Long
-    Dim SignData As String
-    Dim CampoData As String
-    Dim chunk() As Byte
-    Dim lngOffset As Long
-    Dim lngChunkSize As Long
-    Dim SqlStr As String
-    Dim rs_firma As New ADODB.Recordset
-    Dim fileNum As Integer
-    Dim fileSize As Long
 
-    On Error GoTo Err_AddSign
+    using (var inputStream = image.OpenReadStream())
+    using (var originalImage = new Bitmap(inputStream))
+    {
+        int width = originalImage.Width;
+        int height = originalImage.Height;
 
-    If Conn Is Nothing Or Conn.State = adStateClosed Then
-        AbrirConexion
-    End If
+        // 🔥 Crear una imagen en formato 1bpp (blanco y negro)
+        using (var monochromeImage = new Bitmap(width, height, PixelFormat.Format1bppIndexed))
+        {
+            // 🔥 Bloquear los bits para acceder directamente a la memoria
+            BitmapData bmpData = monochromeImage.LockBits(
+                new Rectangle(0, 0, width, height),
+                ImageLockMode.WriteOnly,
+                PixelFormat.Format1bppIndexed);
 
-    ' 🔥 LEER LA IMAGEN DESDE EL ARCHIVO
-    fileNum = FreeFile()
-    Open rutaImagen For Binary As #fileNum
-    fileSize = LOF(fileNum) ' Obtener el tamaño del archivo
-    ReDim chunk(fileSize - 1) ' Reservar espacio en memoria
-    Get #fileNum, 1, chunk ' Leer el archivo en la variable chunk
-    Close #fileNum
+            int stride = bmpData.Stride;
+            IntPtr scan0 = bmpData.Scan0;
+            byte[] pixelData = new byte[stride * height];
 
-    ' 🔥 INSERTAR EN LA BASE DE DATOS
-    SqlStr = "SELECT * FROM IMAGENES WHERE CODIGO = '" & codigo & "' AND ID = '" & id & "'"
-    Set rs_firma = New ADODB.Recordset
-    rs_firma.Open SqlStr, Conn, adOpenKeyset, adLockOptimistic
+            // 🔥 Convertir cada píxel a blanco o negro
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    Color pixelColor = originalImage.GetPixel(x, y);
+                    int grayscale = (int)(pixelColor.R * 0.3 + pixelColor.G * 0.59 + pixelColor.B * 0.11);
+                    bool isBlack = grayscale < 128; // Si el valor es menor a 128, lo hacemos negro
 
-    If Not rs_firma.EOF Then
-        rs_firma("largo") = fileSize
-        lngOffset = 0
-        Do While lngOffset < fileSize
-            rs_firma("foto").AppendChunk LeftB(RightB(chunk, fileSize - lngOffset), conChunksize2)
-            lngOffset = lngOffset + conChunksize2
-        Loop
+                    int byteIndex = (y * stride) + (x / 8);
+                    int bitIndex = 7 - (x % 8);
 
-        rs_firma.Update
-        AddSignDesdeArchivo = "OK"
-    Else
-        AddSignDesdeArchivo = "ERROR"
-    End If
+                    if (isBlack)
+                    {
+                        pixelData[byteIndex] |= (byte)(1 << bitIndex);
+                    }
+                }
+            }
 
-PROC_EXIT:
-    If Not rs_firma Is Nothing Then
-        rs_firma.Close
-        Set rs_firma = Nothing
-    End If
-    Exit Function
+            // 🔥 Escribir los datos en la imagen y desbloquear
+            System.Runtime.InteropServices.Marshal.Copy(pixelData, 0, scan0, pixelData.Length);
+            monochromeImage.UnlockBits(bmpData);
 
-Err_AddSign:
-    AddSignDesdeArchivo = "ER"
-    Resume PROC_EXIT
-End Function
+            // 🔥 Guardar en memoria como BMP
+            using (var bmpMemoryStream = new MemoryStream())
+            {
+                monochromeImage.Save(bmpMemoryStream, ImageFormat.Bmp);
+                imageData = bmpMemoryStream.ToArray();
+            }
+        }
+    }
