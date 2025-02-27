@@ -1,58 +1,37 @@
-private Bitmap ConvertTo1bpp(Bitmap original)
+private Bitmap ResizeImage(Bitmap image)
 {
-    int width = original.Width;
-    int height = original.Height;
-    Bitmap bwImage = new Bitmap(width, height, PixelFormat.Format1bppIndexed);
+    int newWidth = image.Width;
+    int newHeight = image.Height;
 
-    // 🔥 Bloquear bits de la imagen original y la de destino (1bpp)
-    BitmapData originalData = original.LockBits(new Rectangle(0, 0, width, height), 
-                                                ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
-    BitmapData bwData = bwImage.LockBits(new Rectangle(0, 0, width, height), 
-                                         ImageLockMode.WriteOnly, PixelFormat.Format1bppIndexed);
+    // 🔥 Convertir a 24bpp antes de redimensionar
+    Bitmap tempImage = ConvertTo24bpp(image);
 
-    int bytesPerPixel = 3; // 24bpp (RGB) → 3 bytes por píxel
-    int strideOriginal = originalData.Stride;
-    int strideBw = bwData.Stride;
-    int threshold = 128; // 🔥 Umbral para blanco/negro
+    // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
+    double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (tempImage.Width * tempImage.Height)) + 0.1;
+    newWidth = (int)(tempImage.Width * scaleFactor);
+    newHeight = (int)(tempImage.Height * scaleFactor);
 
-    unsafe
+    // Evitar tamaños demasiado pequeños
+    if (newWidth < 100) newWidth = 100;
+    if (newHeight < 100) newHeight = 100;
+
+    Bitmap resizedImage = new Bitmap(newWidth, newHeight);
+    using (Graphics g = Graphics.FromImage(resizedImage))
     {
-        byte* originalPtr = (byte*)originalData.Scan0;
-        byte* bwPtr = (byte*)bwData.Scan0;
-
-        for (int y = 0; y < height; y++)
-        {
-            byte pixelByte = 0;
-            int bitIndex = 0;
-
-            for (int x = 0; x < width; x++)
-            {
-                int index = (y * strideOriginal) + (x * bytesPerPixel);
-                byte gray = (byte)(0.299 * originalPtr[index + 2] + 
-                                   0.587 * originalPtr[index + 1] + 
-                                   0.114 * originalPtr[index]);
-
-                bool isBlack = gray < threshold;
-                if (isBlack)
-                {
-                    pixelByte |= (byte)(1 << (7 - bitIndex));
-                }
-
-                bitIndex++;
-
-                if (bitIndex == 8 || x == width - 1)
-                {
-                    int bwIndex = (y * strideBw) + (x / 8);
-                    bwPtr[bwIndex] = pixelByte;
-                    pixelByte = 0;
-                    bitIndex = 0;
-                }
-            }
-        }
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.DrawImage(tempImage, 0, 0, newWidth, newHeight);
     }
 
-    bwImage.UnlockBits(bwData);
-    original.UnlockBits(originalData);
-    
-    return bwImage;
+    // 🔥 Convertir de vuelta a 1bpp después de redimensionar
+    return ConvertTo1bpp(resizedImage);
+}
+
+private Bitmap ConvertTo24bpp(Bitmap original)
+{
+    Bitmap newBitmap = new Bitmap(original.Width, original.Height, PixelFormat.Format24bppRgb);
+    using (Graphics g = Graphics.FromImage(newBitmap))
+    {
+        g.DrawImage(original, 0, 0);
+    }
+    return newBitmap;
 }
