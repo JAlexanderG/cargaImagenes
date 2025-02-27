@@ -1,93 +1,58 @@
-using System;
-using System.Drawing;
-using System.Drawing.Imaging;
-using System.IO;
-
-public class LeadToolsProcessor
+private Bitmap ConvertTo1bpp(Bitmap original)
 {
-    private const int MAXBYTE_FIRMA = 2048; // Límite de tamaño en bytes
-    private const int MIN_WIDTH = 100; // Evitar que se haga demasiado pequeña
-    private const int MIN_HEIGHT = 100;
+    int width = original.Width;
+    int height = original.Height;
+    Bitmap bwImage = new Bitmap(width, height, PixelFormat.Format1bppIndexed);
 
-    public byte[] ProcessImage(Bitmap originalImage)
+    // 🔥 Bloquear bits de la imagen original y la de destino (1bpp)
+    BitmapData originalData = original.LockBits(new Rectangle(0, 0, width, height), 
+                                                ImageLockMode.ReadOnly, PixelFormat.Format24bppRgb);
+    BitmapData bwData = bwImage.LockBits(new Rectangle(0, 0, width, height), 
+                                         ImageLockMode.WriteOnly, PixelFormat.Format1bppIndexed);
+
+    int bytesPerPixel = 3; // 24bpp (RGB) → 3 bytes por píxel
+    int strideOriginal = originalData.Stride;
+    int strideBw = bwData.Stride;
+    int threshold = 128; // 🔥 Umbral para blanco/negro
+
+    unsafe
     {
-        // 🔥 1️⃣ Convertimos la imagen a blanco y negro (1bpp)
-        using (Bitmap bwImage = ConvertTo1bpp(originalImage))
+        byte* originalPtr = (byte*)originalData.Scan0;
+        byte* bwPtr = (byte*)bwData.Scan0;
+
+        for (int y = 0; y < height; y++)
         {
-            // 🔥 2️⃣ Ajustamos el tamaño sin perder calidad
-            Bitmap resizedImage = ResizeImage(bwImage);
+            byte pixelByte = 0;
+            int bitIndex = 0;
 
-            // 🔥 3️⃣ Guardamos como BMP y verificamos que no supere 2048 bytes
-            byte[] finalImageData = SaveBmpAndCheckSize(resizedImage);
-
-            return finalImageData;
-        }
-    }
-
-    // **🔥 1️⃣ Convertir a 1bpp (Blanco y Negro Puro)**
-    private Bitmap ConvertTo1bpp(Bitmap original)
-    {
-        Bitmap bwImage = new Bitmap(original.Width, original.Height, PixelFormat.Format1bppIndexed);
-
-        using (Graphics g = Graphics.FromImage(bwImage))
-        {
-            g.DrawImage(original, 0, 0);
-        }
-
-        return bwImage;
-    }
-
-    // **🔥 2️⃣ Ajustar Tamaño de Imagen Sin Perder Calidad**
-    private Bitmap ResizeImage(Bitmap image)
-    {
-        int newWidth = image.Width;
-        int newHeight = image.Height;
-
-        // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
-        double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (image.Width * image.Height)) + 0.1;
-        newWidth = (int)(image.Width * scaleFactor);
-        newHeight = (int)(image.Height * scaleFactor);
-
-        // Evitar tamaños demasiado pequeños
-        if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
-        if (newHeight < MIN_HEIGHT) newHeight = MIN_HEIGHT;
-
-        Bitmap resizedImage = new Bitmap(newWidth, newHeight, PixelFormat.Format1bppIndexed);
-        using (Graphics g = Graphics.FromImage(resizedImage))
-        {
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            g.DrawImage(image, 0, 0, newWidth, newHeight);
-        }
-
-        return resizedImage;
-    }
-
-    // **🔥 3️⃣ Guardar como BMP y Verificar Tamaño**
-    private byte[] SaveBmpAndCheckSize(Bitmap image)
-    {
-        using (var ms = new MemoryStream())
-        {
-            image.Save(ms, ImageFormat.Bmp);
-            byte[] bmpData = ms.ToArray();
-
-            // 🔥 Si la imagen sigue superando los 2048 bytes, reducir más
-            while (bmpData.Length > MAXBYTE_FIRMA)
+            for (int x = 0; x < width; x++)
             {
-                int newWidth = (int)(image.Width * 0.95);
-                int newHeight = (int)(image.Height * 0.95);
+                int index = (y * strideOriginal) + (x * bytesPerPixel);
+                byte gray = (byte)(0.299 * originalPtr[index + 2] + 
+                                   0.587 * originalPtr[index + 1] + 
+                                   0.114 * originalPtr[index]);
 
-                if (newWidth < MIN_WIDTH || newHeight < MIN_HEIGHT)
-                    break; // Evitar reducir demasiado
-
-                image = new Bitmap(image, new Size(newWidth, newHeight));
-                using (var tempStream = new MemoryStream())
+                bool isBlack = gray < threshold;
+                if (isBlack)
                 {
-                    image.Save(tempStream, ImageFormat.Bmp);
-                    bmpData = tempStream.ToArray();
+                    pixelByte |= (byte)(1 << (7 - bitIndex));
+                }
+
+                bitIndex++;
+
+                if (bitIndex == 8 || x == width - 1)
+                {
+                    int bwIndex = (y * strideBw) + (x / 8);
+                    bwPtr[bwIndex] = pixelByte;
+                    pixelByte = 0;
+                    bitIndex = 0;
                 }
             }
-
-            return bmpData;
         }
     }
+
+    bwImage.UnlockBits(bwData);
+    original.UnlockBits(originalData);
+    
+    return bwImage;
 }
