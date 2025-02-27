@@ -1,62 +1,12 @@
-document.getElementById("fileInput").addEventListener("change", function(event) {
-    const file = event.target.files[0];
-    if (!file) return;
+    using (var inputStream = image.OpenReadStream())
+    using (var originalImage = new Bitmap(inputStream))
+    using (var grayscaleImage = new Bitmap(originalImage.Width, originalImage.Height, PixelFormat.Format8bppIndexed)) // 🔥 Convertir a 8bpp
+    using (var gfx = Graphics.FromImage(grayscaleImage))
+    using (var bmpMemoryStream = new MemoryStream())
+    {
+        gfx.Clear(Color.White);
+        gfx.DrawImage(originalImage, 0, 0, originalImage.Width, originalImage.Height);
 
-    // 🔥 Leer el tipo de archivo para verificar si es BMP
-    const fileType = file.type;
-
-    // 🔥 Crear un objeto FormData y agregar la imagen
-    const formData = new FormData();
-
-    if (fileType === "image/bmp") {
-        console.log("Imagen BMP detectada, enviándola sin cambios...");
-        formData.append("image", file, file.name); // Enviar BMP sin conversión
-    } else {
-        console.log("Imagen no es BMP, convirtiéndola antes de enviarla...");
-        
-        // Convertir la imagen a BMP antes de enviarla
-        const reader = new FileReader();
-        reader.onload = function(e) {
-            const img = new Image();
-            img.onload = function() {
-                const canvas = document.createElement("canvas");
-                const ctx = canvas.getContext("2d");
-
-                canvas.width = img.width;
-                canvas.height = img.height;
-
-                ctx.drawImage(img, 0, 0);
-
-                // 🔥 Convertir a BMP antes de enviar
-                canvas.toBlob(blob => {
-                    formData.append("image", blob, "converted.bmp"); // Enviar como BMP
-                    enviarImagen(formData);
-                }, "image/bmp");
-            };
-            img.src = e.target.result;
-        };
-        reader.readAsDataURL(file);
+        grayscaleImage.Save(bmpMemoryStream, ImageFormat.Bmp);
+        imageData = bmpMemoryStream.ToArray();
     }
-
-    // Si la imagen ya es BMP, enviarla directamente
-    if (fileType === "image/bmp") {
-        enviarImagen(formData);
-    }
-});
-
-// 🔥 Función para enviar la imagen al backend
-function enviarImagen(formData) {
-    fetch("/Imagen/Guardar", { // Asegúrate de que la URL coincida con tu controlador
-        method: "POST",
-        body: formData
-    })
-    .then(response => response.json())
-    .then(data => {
-        console.log("Imagen guardada con éxito", data);
-    })
-    .catch(error => console.error("Error al enviar la imagen", error));
-}
-
-
-
-
