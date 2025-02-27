@@ -1,30 +1,34 @@
-using (var inputStream = image.OpenReadStream())
-    using (var originalImage = new Bitmap(inputStream))
+using (var memoryStream = new MemoryStream(imagenYaEnByte)) // 🔥 Convertir byte[] a Stream
+using (var originalImage = new Bitmap(memoryStream))
+{
+    int width = originalImage.Width;
+    int height = originalImage.Height;
+    int maxByteFirma = 2048; // El mismo valor que usa LeadTools
+
+    // 🔥 Simular el cálculo de LeadTools para ajustar tamaño
+    int valorTotal = (height * width) / 8;
+    byte[] imageData;
+
+    if (valorTotal > maxByteFirma)
     {
-        int width = originalImage.Width;
-        int height = originalImage.Height;
-        int maxByteFirma = 2048; // El mismo valor que usa LeadTools
+        int newWidth = (int)(Math.Sqrt(maxByteFirma * 8 * width / height)) + 200;
+        int newHeight = (int)(newWidth * height / width);
 
-        // 🔥 Simular el cálculo de LeadTools para ajustar tamaño
-        int valorTotal = (height * width) / 8;
-        if (valorTotal > maxByteFirma)
+        using (var resizedImage = new Bitmap(originalImage, new Size(newWidth, newHeight)))
+        using (var outputMemoryStream = new MemoryStream())
         {
-            int newWidth = (int)(Math.Sqrt(maxByteFirma * 8 * width / height)) + 200;
-            int newHeight = (int)(newWidth * height / width);
-
-            using (var resizedImage = new Bitmap(originalImage, new Size(newWidth, newHeight)))
-            using (var memoryStream = new MemoryStream())
-            {
-                resizedImage.Save(memoryStream, ImageFormat.Bmp);
-                imageData = memoryStream.ToArray();
-            }
-        }
-        else
-        {
-            using (var memoryStream = new MemoryStream())
-            {
-                originalImage.Save(memoryStream, ImageFormat.Bmp);
-                imageData = memoryStream.ToArray();
-            }
+            resizedImage.Save(outputMemoryStream, ImageFormat.Bmp);
+            imageData = outputMemoryStream.ToArray();
         }
     }
+    else
+    {
+        using (var outputMemoryStream = new MemoryStream())
+        {
+            originalImage.Save(outputMemoryStream, ImageFormat.Bmp);
+            imageData = outputMemoryStream.ToArray();
+        }
+    }
+
+    // 🔥 Ahora `imageData` contiene la imagen procesada y lista para guardar en la base de datos
+}
