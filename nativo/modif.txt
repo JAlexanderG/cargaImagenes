@@ -18,26 +18,45 @@ private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
         }
 
         // 🚨 Evitamos reducir demasiado la imagen
-        if (width < 50 || height < 50)
+        if (width < 100 || height < 100)
         {
             Console.WriteLine("⚠️ La imagen no puede reducirse más sin perder contenido.");
-            break; // Nos quedamos con el tamaño más cercano posible
+            break;
         }
 
-        // 🔥 Reducimos la imagen en pasos más grandes si sigue fuera del límite
-        width = (int)(width * 0.85);
-        height = (int)(height * 0.85);
+        // 🔥 Reducimos la imagen con un mejor algoritmo (Bicubic Interpolation)
+        width = (int)(width * 0.90);
+        height = (int)(height * 0.90);
 
-        using (var resizedImage = new Bitmap(image, new Size(width, height)))
+        using (var resizedImage = new Bitmap(width, height))
+        using (Graphics g = Graphics.FromImage(resizedImage))
         {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+            g.DrawImage(image, 0, 0, width, height);
+
             image = (Bitmap)resizedImage.Clone();
         }
     }
 
-    // 🔥 Retornamos la versión más reducida posible si no logramos llegar a 2048 bytes
+    // 🔥 Suavizar bordes antes de devolver la imagen final
+    using (var smoothedImage = SmoothEdges(image))
     using (var ms = new MemoryStream())
     {
-        image.Save(ms, ImageFormat.Bmp);
+        smoothedImage.Save(ms, ImageFormat.Bmp);
         return ms.ToArray();
     }
+}
+
+// **🔥 Suavizar bordes para mejorar calidad en la web**
+private Bitmap SmoothEdges(Bitmap image)
+{
+    Bitmap smoothed = new Bitmap(image.Width, image.Height);
+    using (Graphics g = Graphics.FromImage(smoothed))
+    {
+        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height));
+    }
+    return smoothed;
 }
