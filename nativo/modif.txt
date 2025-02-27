@@ -1,34 +1,35 @@
-using (var memoryStream = new MemoryStream(imagenYaEnByte)) // 🔥 Convertir byte[] a Stream
-using (var originalImage = new Bitmap(memoryStream))
+private byte[] EnsureMaxSize(byte[] imageData, int maxSize)
 {
-    int width = originalImage.Width;
-    int height = originalImage.Height;
-    int maxByteFirma = 2048; // El mismo valor que usa LeadTools
+    if (imageData.Length <= maxSize)
+        return imageData; // ✅ La imagen ya cumple con el tamaño límite, no hacemos nada.
 
-    // 🔥 Simular el cálculo de LeadTools para ajustar tamaño
-    int valorTotal = (height * width) / 8;
-    byte[] imageData;
-
-    if (valorTotal > maxByteFirma)
+    using (var memoryStream = new MemoryStream(imageData))
+    using (var originalImage = new Bitmap(memoryStream))
     {
-        int newWidth = (int)(Math.Sqrt(maxByteFirma * 8 * width / height)) + 200;
-        int newHeight = (int)(newWidth * height / width);
+        int width = originalImage.Width;
+        int height = originalImage.Height;
 
-        using (var resizedImage = new Bitmap(originalImage, new Size(newWidth, newHeight)))
-        using (var outputMemoryStream = new MemoryStream())
+        // 🔥 Reducción progresiva del tamaño de la imagen hasta que esté por debajo del límite
+        while (true)
         {
-            resizedImage.Save(outputMemoryStream, ImageFormat.Bmp);
-            imageData = outputMemoryStream.ToArray();
+            // Reducir en 10% cada iteración para evitar pérdida drástica de calidad
+            width = (int)(width * 0.9);
+            height = (int)(height * 0.9);
+
+            if (width < 1 || height < 1)
+                throw new Exception("No se puede reducir más la imagen sin perder contenido.");
+
+            using (var resizedImage = new Bitmap(originalImage, new Size(width, height)))
+            using (var ms = new MemoryStream())
+            {
+                resizedImage.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
+                byte[] newImageData = ms.ToArray();
+
+                if (newImageData.Length <= maxSize)
+                    return newImageData; // ✅ La imagen ya es menor a 2048 bytes, la retornamos.
+
+                // Si aún supera el límite, seguimos reduciendo
+            }
         }
     }
-    else
-    {
-        using (var outputMemoryStream = new MemoryStream())
-        {
-            originalImage.Save(outputMemoryStream, ImageFormat.Bmp);
-            imageData = outputMemoryStream.ToArray();
-        }
-    }
-
-    // 🔥 Ahora `imageData` contiene la imagen procesada y lista para guardar en la base de datos
 }
