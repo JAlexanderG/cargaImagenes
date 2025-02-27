@@ -1,59 +1,76 @@
-private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
+public class LeadToolsProcessor
 {
-    int width = image.Width;
-    int height = image.Height;
-    const int bmpHeaderSize = 54;
+    private const int MAXBYTE_FIRMA = 2048; // Límite de tamaño en bytes
+    private const int MIN_WIDTH = 100; // Evitar que se haga demasiado pequeña
+    private const int MIN_HEIGHT = 100;
 
-    while (true)
+    public byte[] ProcessImage(Bitmap originalImage)
+    {
+        // 🔥 1️⃣ CREAR "REGIÓN FLOTANTE" (Equivalente a `Floater` en VB6)
+        Rectangle floatRegion = new Rectangle(0, 0, originalImage.Width, originalImage.Height);
+        using (Bitmap floaterImage = originalImage.Clone(floatRegion, originalImage.PixelFormat))
+        {
+            // 🔥 2️⃣ AJUSTAR TAMAÑO SIN PERDER CALIDAD
+            Bitmap resizedImage = ResizeImage(floaterImage);
+
+            // 🔥 3️⃣ GUARDAR COMO BMP Y VERIFICAR TAMAÑO
+            byte[] finalImageData = SaveBmpAndCheckSize(resizedImage);
+
+            return finalImageData;
+        }
+    }
+
+    // **🔥 2️⃣ REDIMENSIONAR IMAGEN COMO `LEAD2.Size` en VB6**
+    private Bitmap ResizeImage(Bitmap image)
+    {
+        int newWidth = image.Width;
+        int newHeight = image.Height;
+
+        // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
+        double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (image.Width * image.Height)) + 0.1;
+        newWidth = (int)(image.Width * scaleFactor);
+        newHeight = (int)(image.Height * scaleFactor);
+
+        // Evitar tamaños demasiado pequeños
+        if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
+        if (newHeight < MIN_HEIGHT) newHeight = MIN_HEIGHT;
+
+        Bitmap resizedImage = new Bitmap(newWidth, newHeight);
+        using (Graphics g = Graphics.FromImage(resizedImage))
+        {
+            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+            g.DrawImage(image, 0, 0, newWidth, newHeight);
+        }
+
+        return resizedImage;
+    }
+
+    // **🔥 3️⃣ GUARDAR COMO BMP Y ASEGURAR QUE NO EXCEDA LOS 2048 BYTES**
+    private byte[] SaveBmpAndCheckSize(Bitmap image)
     {
         using (var ms = new MemoryStream())
         {
             image.Save(ms, ImageFormat.Bmp);
-            byte[] imageData = ms.ToArray();
-            int dataSize = imageData.Length - bmpHeaderSize;
+            byte[] bmpData = ms.ToArray();
 
-            if (imageData.Length <= maxFileSize && dataSize <= maxDataSize)
-                return imageData;
-        }
+            // 🔥 Si la imagen sigue superando los 2048 bytes, reducir más
+            while (bmpData.Length > MAXBYTE_FIRMA)
+            {
+                int newWidth = (int)(image.Width * 0.95);
+                int newHeight = (int)(image.Height * 0.95);
 
-        if (width < 100 || height < 100)
-        {
-            Console.WriteLine("⚠️ La imagen no puede reducirse más sin perder contenido.");
-            break;
-        }
+                if (newWidth < MIN_WIDTH || newHeight < MIN_HEIGHT)
+                    break; // Evitar reducir demasiado
 
-        width = (int)(width * 0.90);
-        height = (int)(height * 0.90);
+                image = new Bitmap(image, new Size(newWidth, newHeight));
+                using (var tempStream = new MemoryStream())
+                {
+                    image.Save(tempStream, ImageFormat.Bmp);
+                    bmpData = tempStream.ToArray();
+                }
+            }
 
-        using (var resizedImage = new Bitmap(width, height))
-        using (Graphics g = Graphics.FromImage(resizedImage))
-        {
-            g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-            g.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
-            g.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
-            g.DrawImage(image, 0, 0, width, height);
-
-            image = (Bitmap)resizedImage.Clone();
+            return bmpData;
         }
     }
-
-    // 🔥 Aplicamos mejora final: Refuerzo de contornos sin distorsión en VB6
-    using (var enhancedImage = ApplyUnsharpMask(image))
-    using (var ms = new MemoryStream())
-    {
-        enhancedImage.Save(ms, ImageFormat.Bmp);
-        return ms.ToArray();
-    }
-}
-
-// **🔥 Unsharp Mask para mejorar bordes sin distorsionar la imagen en VB6**
-private Bitmap ApplyUnsharpMask(Bitmap image)
-{
-    Bitmap sharpened = new Bitmap(image.Width, image.Height);
-    using (Graphics g = Graphics.FromImage(sharpened))
-    {
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-        g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height));
-    }
-    return sharpened;
 }
