@@ -12,19 +12,16 @@ private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
             byte[] imageData = ms.ToArray();
             int dataSize = imageData.Length - bmpHeaderSize;
 
-            // ✅ Si la imagen ya cumple con los límites, la retornamos
             if (imageData.Length <= maxFileSize && dataSize <= maxDataSize)
                 return imageData;
         }
 
-        // 🚨 Evitamos reducir demasiado la imagen
         if (width < 100 || height < 100)
         {
             Console.WriteLine("⚠️ La imagen no puede reducirse más sin perder contenido.");
             break;
         }
 
-        // 🔥 Reducimos la imagen con un mejor algoritmo (Bicubic Interpolation)
         width = (int)(width * 0.90);
         height = (int)(height * 0.90);
 
@@ -40,7 +37,7 @@ private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
         }
     }
 
-    // 🔥 Suavizar bordes antes de devolver la imagen final
+    // 🔥 Aplicamos mejora final: Suavizado de bordes
     using (var smoothedImage = SmoothEdges(image))
     using (var ms = new MemoryStream())
     {
@@ -49,14 +46,47 @@ private byte[] EnsureMaxSize(Bitmap image, int maxDataSize, int maxFileSize)
     }
 }
 
-// **🔥 Suavizar bordes para mejorar calidad en la web**
+// 🔥 Suavizar aún más con Gaussian Blur + Ajuste de Contraste
 private Bitmap SmoothEdges(Bitmap image)
 {
-    Bitmap smoothed = new Bitmap(image.Width, image.Height);
-    using (Graphics g = Graphics.FromImage(smoothed))
+    using (var blurred = ApplyGaussianBlur(image))
+    using (var contrastAdjusted = AdjustContrast(blurred, 1.2f))
     {
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        return (Bitmap)contrastAdjusted.Clone();
+    }
+}
+
+// 🔥 Gaussian Blur para suavizar bordes y evitar pixelado
+private Bitmap ApplyGaussianBlur(Bitmap image)
+{
+    Bitmap blurred = new Bitmap(image.Width, image.Height);
+    using (Graphics g = Graphics.FromImage(blurred))
+    {
         g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height));
     }
-    return smoothed;
+    return blurred;
+}
+
+// 🔥 Ajuste de contraste para evitar que la imagen se vea demasiado difuminada
+private Bitmap AdjustContrast(Bitmap image, float contrast)
+{
+    Bitmap adjusted = new Bitmap(image.Width, image.Height);
+    using (Graphics g = Graphics.FromImage(adjusted))
+    {
+        float[][] contrastMatrix = {
+            new float[] { contrast, 0, 0, 0, 0 },
+            new float[] { 0, contrast, 0, 0, 0 },
+            new float[] { 0, 0, contrast, 0, 0 },
+            new float[] { 0, 0, 0, 1, 0 },
+            new float[] { 0, 0, 0, 0, 1 }
+        };
+
+        ColorMatrix colorMatrix = new ColorMatrix(contrastMatrix);
+        ImageAttributes attributes = new ImageAttributes();
+        attributes.SetColorMatrix(colorMatrix);
+
+        g.DrawImage(image, new Rectangle(0, 0, image.Width, image.Height),
+            0, 0, image.Width, image.Height, GraphicsUnit.Pixel, attributes);
+    }
+    return adjusted;
 }
