@@ -1,3 +1,8 @@
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.IO;
+
 public class LeadToolsProcessor
 {
     private const int MAXBYTE_FIRMA = 2048; // Límite de tamaño en bytes
@@ -6,21 +11,33 @@ public class LeadToolsProcessor
 
     public byte[] ProcessImage(Bitmap originalImage)
     {
-        // 🔥 1️⃣ CREAR "REGIÓN FLOTANTE" (Equivalente a `Floater` en VB6)
-        Rectangle floatRegion = new Rectangle(0, 0, originalImage.Width, originalImage.Height);
-        using (Bitmap floaterImage = originalImage.Clone(floatRegion, originalImage.PixelFormat))
+        // 🔥 1️⃣ Convertimos la imagen a blanco y negro (1bpp)
+        using (Bitmap bwImage = ConvertTo1bpp(originalImage))
         {
-            // 🔥 2️⃣ AJUSTAR TAMAÑO SIN PERDER CALIDAD
-            Bitmap resizedImage = ResizeImage(floaterImage);
+            // 🔥 2️⃣ Ajustamos el tamaño sin perder calidad
+            Bitmap resizedImage = ResizeImage(bwImage);
 
-            // 🔥 3️⃣ GUARDAR COMO BMP Y VERIFICAR TAMAÑO
+            // 🔥 3️⃣ Guardamos como BMP y verificamos que no supere 2048 bytes
             byte[] finalImageData = SaveBmpAndCheckSize(resizedImage);
 
             return finalImageData;
         }
     }
 
-    // **🔥 2️⃣ REDIMENSIONAR IMAGEN COMO `LEAD2.Size` en VB6**
+    // **🔥 1️⃣ Convertir a 1bpp (Blanco y Negro Puro)**
+    private Bitmap ConvertTo1bpp(Bitmap original)
+    {
+        Bitmap bwImage = new Bitmap(original.Width, original.Height, PixelFormat.Format1bppIndexed);
+
+        using (Graphics g = Graphics.FromImage(bwImage))
+        {
+            g.DrawImage(original, 0, 0);
+        }
+
+        return bwImage;
+    }
+
+    // **🔥 2️⃣ Ajustar Tamaño de Imagen Sin Perder Calidad**
     private Bitmap ResizeImage(Bitmap image)
     {
         int newWidth = image.Width;
@@ -35,7 +52,7 @@ public class LeadToolsProcessor
         if (newWidth < MIN_WIDTH) newWidth = MIN_WIDTH;
         if (newHeight < MIN_HEIGHT) newHeight = MIN_HEIGHT;
 
-        Bitmap resizedImage = new Bitmap(newWidth, newHeight);
+        Bitmap resizedImage = new Bitmap(newWidth, newHeight, PixelFormat.Format1bppIndexed);
         using (Graphics g = Graphics.FromImage(resizedImage))
         {
             g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
@@ -45,7 +62,7 @@ public class LeadToolsProcessor
         return resizedImage;
     }
 
-    // **🔥 3️⃣ GUARDAR COMO BMP Y ASEGURAR QUE NO EXCEDA LOS 2048 BYTES**
+    // **🔥 3️⃣ Guardar como BMP y Verificar Tamaño**
     private byte[] SaveBmpAndCheckSize(Bitmap image)
     {
         using (var ms = new MemoryStream())
