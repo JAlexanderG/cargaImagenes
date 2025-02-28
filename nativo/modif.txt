@@ -1,39 +1,45 @@
-private Bitmap ResizeImage(Bitmap image)
-{
-    int newWidth = image.Width;
-    int newHeight = image.Height;
+Private Function ReducirImagen(imagen As String, maxSize As Long) As String
+    Dim FileDes As Integer
+    Dim FileName As String
+    Dim pic As PictureBox
+    Dim imgSize As Long
+    Dim nuevoAncho As Integer
+    Dim nuevoAlto As Integer
+    Dim escala As Double
 
-    // 🔥 Convertir a 24bpp antes de redimensionar
-    Bitmap tempImage = ConvertTo24bpp(image);
+    ' 🔥 Guardar temporalmente la imagen BMP
+    FileName = "C:\Temp\firma_temporal.bmp"
+    FileDes = FreeFile
+    Open FileName For Binary As #FileDes
+    Put #FileDes, , imagen
+    Close #FileDes
 
-    // 🔥 Calcular nueva escala para cumplir con `MAXBYTE_FIRMA`
-    double scaleFactor = Math.Sqrt((double)(MAXBYTE_FIRMA * 8) / (tempImage.Width * tempImage.Height)) + 0.1;
-    newWidth = (int)(tempImage.Width * scaleFactor);
-    newHeight = (int)(tempImage.Height * scaleFactor);
+    ' 🔥 Cargar la imagen en un PictureBox
+    Set pic = LoadPicture(FileName)
+    
+    ' 🔥 Obtener el tamaño original
+    imgSize = FileLen(FileName)
 
-    // Evitar tamaños demasiado pequeños
-    if (newWidth < 100) newWidth = 100;
-    if (newHeight < 100) newHeight = 100;
+    ' 🔥 Si la imagen supera el tamaño máximo, reducimos su tamaño
+    If imgSize > maxSize Then
+        escala = Sqr(maxSize * 8 / (pic.ScaleWidth * pic.ScaleHeight))
+        nuevoAncho = pic.ScaleWidth * escala
+        nuevoAlto = pic.ScaleHeight * escala
 
-    Bitmap resizedImage = new Bitmap(newWidth, newHeight, PixelFormat.Format24bppRgb);
-    using (Graphics g = Graphics.FromImage(resizedImage))
-    {
-        g.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
-        g.DrawImage(tempImage, 0, 0, newWidth, newHeight);
-    }
+        ' Ajustamos el tamaño del PictureBox
+        pic.Width = nuevoAncho
+        pic.Height = nuevoAlto
 
-    tempImage.Dispose(); // Limpiar memoria
+        ' Guardamos la imagen nuevamente
+        SavePicture pic.Image, "C:\Temp\firma_final.bmp"
 
-    // 🔥 Convertir de vuelta a 8bpp después de redimensionar
-    return ConvertTo8bpp(resizedImage);
-}
-
-private Bitmap ConvertTo24bpp(Bitmap original)
-{
-    Bitmap newBitmap = new Bitmap(original.Width, original.Height, PixelFormat.Format24bppRgb);
-    using (Graphics g = Graphics.FromImage(newBitmap))
-    {
-        g.DrawImage(original, 0, 0);
-    }
-    return newBitmap;
-}
+        ' 🔥 Cargar la imagen reducida en un string para devolverla
+        FileDes = FreeFile
+        Open "C:\Temp\firma_final.bmp" For Binary As #FileDes
+        ReducirImagen = String(FileLen("C:\Temp\firma_final.bmp"), 0)
+        Get #FileDes, , ReducirImagen
+        Close #FileDes
+    Else
+        ReducirImagen = imagen
+    End If
+End Function
