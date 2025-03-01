@@ -2,28 +2,23 @@ private Bitmap ConvertTo1bpp(Bitmap original)
 {
     int width = original.Width;
     int height = original.Height;
-    Bitmap binarizedBitmap = new Bitmap(width, height, System.Drawing.Imaging.PixelFormat.Format1bppIndexed);
+    Bitmap binarizedBitmap = new Bitmap(width, height, PixelFormat.Format1bppIndexed);
 
-    using (Graphics g = Graphics.FromImage(binarizedBitmap))
-    {
-        g.Clear(Color.White); // 🔥 Establecer fondo blanco
-    }
-
-    BitmapData data = binarizedBitmap.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.WriteOnly, PixelFormat.Format1bppIndexed);
-    BitmapData originalData = original.LockBits(new Rectangle(0, 0, width, height), ImageLockMode.ReadOnly, original.PixelFormat);
+    BitmapData data = binarizedBitmap.LockBits(new Rectangle(0, 0, width, height), 
+                        ImageLockMode.WriteOnly, PixelFormat.Format1bppIndexed);
+    BitmapData originalData = original.LockBits(new Rectangle(0, 0, width, height), 
+                        ImageLockMode.ReadOnly, original.PixelFormat);
 
     try
     {
         int bytesPerPixel = Image.GetPixelFormatSize(original.PixelFormat) / 8;
         int stride = originalData.Stride;
         int newStride = data.Stride;
-        IntPtr scan0 = data.Scan0;
-        IntPtr scanOriginal = originalData.Scan0;
 
         unsafe
         {
-            byte* newRow = (byte*)scan0.ToPointer();
-            byte* originalRow = (byte*)scanOriginal.ToPointer();
+            byte* newRow = (byte*)data.Scan0;
+            byte* originalRow = (byte*)originalData.Scan0;
 
             for (int y = 0; y < height; y++)
             {
@@ -32,10 +27,14 @@ private Bitmap ConvertTo1bpp(Bitmap original)
 
                 for (int x = 0; x < width; x++)
                 {
-                    Color pixel = Color.FromArgb(originalRow[x * bytesPerPixel], originalRow[x * bytesPerPixel + 1], originalRow[x * bytesPerPixel + 2]);
-                    int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
+                    Color pixel = Color.FromArgb(
+                        originalRow[x * bytesPerPixel], 
+                        originalRow[x * bytesPerPixel + 1], 
+                        originalRow[x * bytesPerPixel + 2]);
 
+                    int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
                     bool isBlack = grayValue < 128; // 🔥 Definir si el píxel es negro o blanco
+
                     if (isBlack)
                     {
                         pixelByte |= (byte)(1 << bitIndex);
