@@ -33,9 +33,9 @@ private Bitmap ConvertTo1bpp(Bitmap original)
                         originalRow[x * bytesPerPixel + 2]);
 
                     int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
-                    bool isBlack = grayValue < 128; // 🔥 Definir si el píxel es negro o blanco
+                    bool isBlack = grayValue >= 128; // 🔥 INVERSIÓN DE COLORES (ANTES ERA <, AHORA ES >=)
 
-                    if (isBlack)
+                    if (isBlack) // 🔥 Ahora negro será firma, y el fondo será blanco
                     {
                         pixelByte |= (byte)(1 << bitIndex);
                     }
