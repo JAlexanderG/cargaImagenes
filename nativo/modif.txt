@@ -1,45 +1,138 @@
-Private Function ReducirImagen(imagen As String, maxSize As Long) As String
-    Dim FileDes As Integer
-    Dim FileName As String
-    Dim pic As PictureBox
-    Dim imgSize As Long
-    Dim nuevoAncho As Integer
-    Dim nuevoAlto As Integer
-    Dim escala As Double
+public async Task<IActionResult> guardar([FromForm] IFormFile image)
+{
+    byte[] alteredBmpData = ConvertToAlteredBmp(image); // 🔥 Aplicamos los filtros iniciales
 
-    ' 🔥 Guardar temporalmente la imagen BMP
-    FileName = "C:\Temp\firma_temporal.bmp"
-    FileDes = FreeFile
-    Open FileName For Binary As #FileDes
-    Put #FileDes, , imagen
-    Close #FileDes
+    byte[] finalImageData = EnsureMaxSize(alteredBmpData); // 🔥 Aplicamos la restricción de 2048 bytes
 
-    ' 🔥 Cargar la imagen en un PictureBox
-    Set pic = LoadPicture(FileName)
-    
-    ' 🔥 Obtener el tamaño original
-    imgSize = FileLen(FileName)
+    // Ahora `finalImageData` es lo que guardamos en la base de datos
+    instancia.campoImagen = finalImageData;
+    await _dbContext.SaveChangesAsync();
 
-    ' 🔥 Si la imagen supera el tamaño máximo, reducimos su tamaño
-    If imgSize > maxSize Then
-        escala = Sqr(maxSize * 8 / (pic.ScaleWidth * pic.ScaleHeight))
-        nuevoAncho = pic.ScaleWidth * escala
-        nuevoAlto = pic.ScaleHeight * escala
+    return Json(new { message = "Imagen guardada correctamente" });
+}
 
-        ' Ajustamos el tamaño del PictureBox
-        pic.Width = nuevoAncho
-        pic.Height = nuevoAlto
+// 🔥 1️⃣ Aplicar los filtros iniciales de binarización y reducción de tamaño
+private byte[] ConvertToAlteredBmp(IFormFile file)
+{
+    using (var inputStream = file.OpenReadStream())
+    using (var originalImage = System.Drawing.Image.FromStream(inputStream))
+    {
+        using (var resizedImage = ResizeImage(originalImage, 367, 217)) // Reducir tamaño
+        using (var binarizedImage = BinarizeImage(resizedImage)) // Convertir a blanco y negro
+        using (var ms = new MemoryStream())
+        {
+            binarizedImage.Save(ms, System.Drawing.Imaging.ImageFormat.Bmp);
+            return ms.ToArray(); // Devuelve la imagen binarizada en bytes
+        }
+    }
+}
 
-        ' Guardamos la imagen nuevamente
-        SavePicture pic.Image, "C:\Temp\firma_final.bmp"
+// 🔥 2️⃣ Aplicar restricción de 2048 bytes sin perder calidad
+private byte[] EnsureMaxSize(byte[] bmpData)
+{
+    using (var memoryStream = new MemoryStream(bmpData))
+    using (var originalImage = new Bitmap(memoryStream))
+    {
+        int width = originalImage.Width;
+        int height = originalImage.Height;
+        int maxByteFirma = 2048;
 
-        ' 🔥 Cargar la imagen reducida en un string para devolverla
-        FileDes = FreeFile
-        Open "C:\Temp\firma_final.bmp" For Binary As #FileDes
-        ReducirImagen = String(FileLen("C:\Temp\firma_final.bmp"), 0)
-        Get #FileDes, , ReducirImagen
-        Close #FileDes
-    Else
-        ReducirImagen = imagen
-    End If
-End Function
+        int valorTotal = (height * width) / 8;
+        if (valorTotal > maxByteFirma)
+        {
+            int newWidth = (int)(Math.Sqrt(maxByteFirma * 8 * width / height)) + 200;
+            int newHeight = (int)(newWidth * height / width);
+
+            using (var resizedImage = new Bitmap(originalImage, new Size(newWidth, newHeight)))
+            using (var outputMemoryStream = new MemoryStream())
+            {
+                resizedImage.Save(outputMemoryStream, ImageFormat.Bmp);
+                return outputMemoryStream.ToArray();
+            }
+        }
+        else
+        {
+            return bmpData; // Si ya es menor a 2048 bytes, la dejamos como está
+        }
+    }
+}
+
+// 🔥 3️⃣ Reducción de tamaño de la imagen
+private System.Drawing.Image ResizeImage(System.Drawing.Image image, int maxWidth, int maxHeight)
+{
+    int newWidth = image.Width;
+    int newHeight = image.Height;
+
+    if (image.Width > maxWidth || image.Height > maxHeight)
+    {
+        if (image.Width > image.Height)
+        {
+            newWidth = maxWidth;
+            newHeight = (int)(image.Height * (maxWidth / (double)image.Width));
+        }
+        else
+        {
+            newHeight = maxHeight;
+            newWidth = (int)(image.Width * (maxHeight / (double)image.Height));
+        }
+    }
+
+    var resizedBitmap = new System.Drawing.Bitmap(newWidth, newHeight);
+    using (var graphics = System.Drawing.Graphics.FromImage(resizedBitmap))
+    {
+        graphics.CompositingQuality = System.Drawing.Drawing2D.CompositingQuality.HighQuality;
+        graphics.SmoothingMode = System.Drawing.Drawing2D.SmoothingMode.HighQuality;
+        graphics.InterpolationMode = System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;
+        graphics.DrawImage(image, 0, 0, newWidth, newHeight);
+    }
+
+    return resizedBitmap;
+}
+
+// 🔥 4️⃣ Convertir a Blanco y Negro (1bpp)
+private System.Drawing.Bitmap BinarizeImage(System.Drawing.Image image)
+{
+    var bitmap = new System.Drawing.Bitmap(image);
+    var binarizedBitmap = new System.Drawing.Bitmap(bitmap.Width, bitmap.Height, System.Drawing.Imaging.PixelFormat.Format1bppIndexed);
+
+    var rect = new System.Drawing.Rectangle(0, 0, binarizedBitmap.Width, binarizedBitmap.Height);
+    var bmpData = binarizedBitmap.LockBits(rect, System.Drawing.Imaging.ImageLockMode.WriteOnly, System.Drawing.Imaging.PixelFormat.Format1bppIndexed);
+
+    try
+    {
+        for (int y = 0; y < bitmap.Height; y++)
+        {
+            byte pixelByte = 0;
+            int bitIndex = 0;
+
+            for (int x = 0; x < bitmap.Width; x++)
+            {
+                var color = bitmap.GetPixel(x, y);
+                int grayValue = (int)(0.299 * color.R + 0.587 * color.G + 0.114 * color.B);
+                int threshold = 128;
+                bool isBlack = grayValue >= threshold;
+
+                if (!isBlack)
+                {
+                    pixelByte |= (byte)(1 << (7 - bitIndex));
+                }
+
+                bitIndex++;
+
+                if (bitIndex == 8 || x == bitmap.Width - 1)
+                {
+                    IntPtr row = bmpData.Scan0 + y * bmpData.Stride;
+                    System.Runtime.InteropServices.Marshal.WriteByte(row + (x / 8), pixelByte);
+                    pixelByte = 0;
+                    bitIndex = 0;
+                }
+            }
+        }
+    }
+    finally
+    {
+        binarizedBitmap.UnlockBits(bmpData);
+    }
+
+    return binarizedBitmap;
+}
