@@ -1,65 +1,58 @@
-private Bitmap ConvertTo1bpp(Bitmap original)
-{
-    int width = original.Width;
-    int height = original.Height;
-    Bitmap binarizedBitmap = new Bitmap(width, height, PixelFormat.Format1bppIndexed);
+Option Explicit
 
-    BitmapData data = binarizedBitmap.LockBits(new Rectangle(0, 0, width, height), 
-                        ImageLockMode.WriteOnly, PixelFormat.Format1bppIndexed);
-    BitmapData originalData = original.LockBits(new Rectangle(0, 0, width, height), 
-                        ImageLockMode.ReadOnly, original.PixelFormat);
+Public Function GuardarImagenDesdeDB(ByVal recordId As Integer) As String
+    On Error GoTo ErrHandler
+    
+    Dim conn As Object ' ADODB.Connection
+    Dim rs As Object   ' ADODB.Recordset
+    Dim imageData As Variant
+    Dim filePath As String
+    Dim fileNum As Integer
+    Dim dataBytes() As Byte
 
-    try
-    {
-        int bytesPerPixel = Image.GetPixelFormatSize(original.PixelFormat) / 8;
-        int stride = originalData.Stride;
-        int newStride = data.Stride;
+    ' Intentar abrir la conexión usando la función existente
+    If AbrirConexion() <> "OK" Then
+        GuardarImagenDesdeDB = "Error al conectar con la base de datos."
+        Exit Function
+    End If
 
-        unsafe
-        {
-            byte* newRow = (byte*)data.Scan0;
-            byte* originalRow = (byte*)originalData.Scan0;
+    ' Crear el objeto Recordset
+    Set rs = CreateObject("ADODB.Recordset")
 
-            for (int y = 0; y < height; y++)
-            {
-                byte pixelByte = 0;
-                int bitIndex = 7;
+    ' Ejecutar la consulta para obtener la imagen
+    rs.Open "SELECT ImageData FROM SourceTable WHERE Id = " & recordId, Conn, 1, 3 ' adOpenKeyset, adLockOptimistic
 
-                for (int x = 0; x < width; x++)
-                {
-                    Color pixel = Color.FromArgb(
-                        originalRow[x * bytesPerPixel], 
-                        originalRow[x * bytesPerPixel + 1], 
-                        originalRow[x * bytesPerPixel + 2]);
+    ' Verificar si hay datos
+    If Not rs.EOF Then
+        imageData = rs.Fields("ImageData").Value ' Obtener los datos binarios
 
-                    int grayValue = (int)(0.299 * pixel.R + 0.587 * pixel.G + 0.114 * pixel.B);
-                    bool isBlack = grayValue >= 128; // 🔥 INVERSIÓN DE COLORES (ANTES ERA <, AHORA ES >=)
+        ' Convertir a un array de bytes si no lo es
+        If Not IsNull(imageData) Then
+            dataBytes = imageData
+            
+            ' Ruta donde se guardará la imagen en Mis Documentos
+            filePath = Environ("USERPROFILE") & "\Documents\imagen_prueba.bmp"
+            
+            ' Guardar el archivo en disco
+            fileNum = FreeFile
+            Open filePath For Binary As #fileNum
+            Put #fileNum, , dataBytes
+            Close #fileNum
 
-                    if (isBlack) // 🔥 Ahora negro será firma, y el fondo será blanco
-                    {
-                        pixelByte |= (byte)(1 << bitIndex);
-                    }
+            GuardarImagenDesdeDB = "Imagen guardada en: " & filePath
+        Else
+            GuardarImagenDesdeDB = "No se encontró la imagen en la base de datos."
+        End If
+    Else
+        GuardarImagenDesdeDB = "Registro no encontrado."
+    End If
 
-                    bitIndex--;
+    ' Cerrar el Recordset
+    rs.Close
+    Set rs = Nothing
+    Exit Function
 
-                    if (bitIndex < 0 || x == width - 1)
-                    {
-                        newRow[x / 8] = pixelByte;
-                        pixelByte = 0;
-                        bitIndex = 7;
-                    }
-                }
-
-                newRow += newStride;
-                originalRow += stride;
-            }
-        }
-    }
-    finally
-    {
-        binarizedBitmap.UnlockBits(data);
-        original.UnlockBits(originalData);
-    }
-
-    return binarizedBitmap;
-}
+ErrHandler:
+    GuardarImagenDesdeDB = "Error al obtener la imagen."
+    Exit Function
+End Function
