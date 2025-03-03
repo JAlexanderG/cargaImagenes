@@ -29,16 +29,26 @@ Function obtenerImg() As String
     If Not rs_sign.EOF Then
         imageData = rs_sign.Fields("campo").Value ' Obtener la imagen del campo
 
-        ' Convertir los datos a array de bytes si no es NULL
+        ' Validar que no sea NULL y que realmente sea un array de bytes
         If Not IsNull(imageData) Then
-            dataBytes = imageData
+            If VarType(imageData) = vbArray + vbByte Then
+                dataBytes = imageData
+            Else
+                obtenerImg = "El campo no contiene datos binarios válidos."
+                Exit Function
+            End If
             
             ' Definir la ruta donde se guardará la imagen
             filePath = "C:\Temp\imagen_prueba.bmp"
 
+            ' Asegurar que el directorio existe
+            If Dir("C:\Temp", vbDirectory) = "" Then
+                MkDir "C:\Temp"
+            End If
+
             ' Guardar la imagen en disco
             fileNum = FreeFile
-            Open filePath For Binary As #fileNum
+            Open filePath For Binary Access Write As #fileNum
             Put #fileNum, , dataBytes
             Close #fileNum
 
