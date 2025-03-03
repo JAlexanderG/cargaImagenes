@@ -1,72 +1,43 @@
-using System;
-using System.Data.SqlClient;
-using System.IO;
-
-class Program
+static byte[] TransformImageData(byte[] rawData)
 {
-    static void Main()
+    using (MemoryStream output = new MemoryStream())
     {
-        string connectionString = "Server=SERVIDOR_SQL;Database=BASE_DATOS;User Id=USUARIO;Password=CONTRASEÑA;";
-        string codigo = "34234";
-        string id = "3423";
+        // 🔹 Mantener el encabezado BMP intacto (primeros 54 bytes)
+        output.Write(rawData, 0, 54);
 
-        byte[] imagenBytes = ObtenerImagenDesdeSQL(connectionString, codigo, id);
-
-        if (imagenBytes != null)
+        // 🔹 Remover los bytes intercalados `00` solo en los datos de la imagen
+        for (int i = 54; i < rawData.Length - 1; i += 2)
         {
-            Console.WriteLine("Primeros 20 bytes obtenidos de SQL Server:");
-            Console.WriteLine(BitConverter.ToString(imagenBytes.Take(20).ToArray()));
-
-            // Guardar los datos sin transformación
-            File.WriteAllBytes("C:\\Temp\\imagen_cruda.bmp", imagenBytes);
-            Console.WriteLine("Imagen guardada como imagen_cruda.bmp");
-
-            // Ahora intentamos la corrección
-            byte[] imagenCorregida = TransformImageData(imagenBytes);
-
-            // Guardamos la imagen corregida
-            File.WriteAllBytes("C:\\Temp\\imagen_corregida.bmp", imagenCorregida);
-            Console.WriteLine("Imagen guardada como imagen_corregida.bmp");
-        }
-        else
-        {
-            Console.WriteLine("No se encontró la imagen.");
-        }
-    }
-
-    static byte[] ObtenerImagenDesdeSQL(string connectionString, string codigo, string id)
-    {
-        using (SqlConnection conn = new SqlConnection(connectionString))
-        {
-            conn.Open();
-            string query = "SELECT FOTO FROM TablaImagenes WHERE codigo = @codigo AND id = @id";
-            
-            using (SqlCommand cmd = new SqlCommand(query, conn))
-            {
-                cmd.Parameters.AddWithValue("@codigo", codigo);
-                cmd.Parameters.AddWithValue("@id", id);
-
-                object result = cmd.ExecuteScalar();
-
-                if (result != DBNull.Value && result != null)
-                {
-                    return (byte[])result;
-                }
-            }
-        }
-        return null;
-    }
-
-    static byte[] TransformImageData(byte[] rawData)
-    {
-        using (MemoryStream output = new MemoryStream())
-        {
-            for (int i = 0; i < rawData.Length; i += 2)
+            if (!(rawData[i] == 0x00 && rawData[i + 1] == 0x00)) // Solo si es un doble `00`
             {
                 output.WriteByte(rawData[i]);
             }
-
-            return output.ToArray();
         }
+
+        byte[] resultado = output.ToArray();
+
+        // 📌 Corregir el tamaño final si es necesario
+        if (resultado.Length < 2404)
+        {
+            Array.Resize(ref resultado, 2404);
+        }
+
+        return resultado;
     }
 }
+
+
+static byte[] FixBMPHeader(byte[] bmpData)
+{
+    // 📌 Posición 18 (0x12) en el BMP: Ancho de la imagen (Debería ser 140 píxeles)
+    bmpData[18] = 0x8C; // 140 en decimal
+    bmpData[19] = 0x00;
+    bmpData[20] = 0x00;
+    bmpData[21] = 0x00;
+
+    return bmpData;
+}
+
+byte[] imagenCorregida = TransformImageData(imagenBytes);
+imagenCorregida = FixBMPHeader(imagenCorregida);
+File.WriteAllBytes("C:\\Temp\\imagen_corregida.bmp", imagenCorregida);
