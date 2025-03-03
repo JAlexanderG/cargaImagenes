@@ -1,71 +1,48 @@
-Private conn As ADODB.Connection
+Option Explicit
+Dim cn As ADODB.Connection
+Dim rs As ADODB.Recordset
 
-Function obtenerImg() As String
-    Dim SqlStr As String
-    Dim rs_sign As ADODB.Recordset
-    Dim imageData As Variant
-    Dim filePath As String
-    Dim fileNum As Integer
-    Dim dataBytes() As Byte
+Sub GuardarImagenDesdeSQL(codigo As String, id As String)
+    Dim rutaSalida As String
+    Dim arrImagen() As Byte
+    Dim archivo As Integer
+    Dim sqlQuery As String
 
-    On Error GoTo PROC_ERR
+    ' Crear conexión con SQL Server
+    Set cn = New ADODB.Connection
+    cn.ConnectionString = "Provider=SQLOLEDB;Data Source=SERVIDOR_SQL;Initial Catalog=BASE_DATOS;User ID=USUARIO;Password=CONTRASEÑA;"
+    cn.Open
 
-    ' Verificar y abrir la conexión si es necesario
-    If conn Is Nothing Or conn.State = adStateClosed Then
-        If AbrirConexion() <> "OK" Then
-            obtenerImg = "Error al conectar con la base de datos."
-            Exit Function
-        End If
-    End If
+    ' Construir consulta con parámetros dinámicos
+    sqlQuery = "SELECT imagen FROM TablaImagenes WHERE codigo = '" & codigo & "' AND id = '" & id & "'"
 
-    ' Definir la consulta SQL
-    SqlStr = "SELECT campo FROM tabla WHERE codigo = '3423' AND id='342342'"
+    ' Ejecutar consulta
+    Set rs = New ADODB.Recordset
+    rs.Open sqlQuery, cn, adOpenStatic, adLockReadOnly
 
-    ' Crear el Recordset y ejecutar la consulta
-    Set rs_sign = New ADODB.Recordset
-    rs_sign.Open SqlStr, conn, adOpenKeySet, adLockOptimistic
+    ' Verificar si hay una imagen
+    If Not rs.EOF Then
+        ' Obtener datos binarios de la imagen
+        arrImagen = rs!imagen
 
-    ' Verificar si hay datos en la consulta
-    If Not rs_sign.EOF Then
-        imageData = rs_sign.Fields("campo").Value ' Obtener la imagen del campo
+        ' Definir ruta de salida
+        rutaSalida = "C:\Temp\Imagen_" & codigo & "_" & id & ".bmp"
 
-        ' Validar que no sea NULL y que realmente sea un array de bytes
-        If Not IsNull(imageData) Then
-            If VarType(imageData) = vbArray + vbByte Then
-                dataBytes = imageData
-            Else
-                obtenerImg = "El campo no contiene datos binarios válidos."
-                Exit Function
-            End If
-            
-            ' Definir la ruta donde se guardará la imagen
-            filePath = "C:\Temp\imagen_prueba.bmp"
+        ' Guardar archivo en disco
+        archivo = FreeFile
+        Open rutaSalida For Binary As archivo
+        Put archivo, , arrImagen
+        Close archivo
 
-            ' Asegurar que el directorio existe
-            If Dir("C:\Temp", vbDirectory) = "" Then
-                MkDir "C:\Temp"
-            End If
-
-            ' Guardar la imagen en disco
-            fileNum = FreeFile
-            Open filePath For Binary Access Write As #fileNum
-            Put #fileNum, , dataBytes
-            Close #fileNum
-
-            obtenerImg = "Imagen guardada en: " & filePath
-        Else
-            obtenerImg = "No se encontró la imagen en la base de datos."
-        End If
+        ' Mensaje de confirmación
+        MsgBox "Imagen guardada en: " & rutaSalida, vbInformation, "Éxito"
     Else
-        obtenerImg = "Registro no encontrado."
+        MsgBox "No se encontró una imagen con el código: " & codigo & " y ID: " & id, vbExclamation, "Aviso"
     End If
 
-    ' Cerrar Recordset
-    rs_sign.Close
-    Set rs_sign = Nothing
-    Exit Function
-
-PROC_ERR:
-    obtenerImg = "Error al obtener la imagen: " & Err.Description
-    Exit Function
-End Function
+    ' Cerrar conexiones
+    rs.Close
+    cn.Close
+    Set rs = Nothing
+    Set cn = Nothing
+End Sub
