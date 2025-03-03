@@ -1,58 +1,61 @@
-Option Explicit
+Private conn As ADODB.Connection
 
-Public Function GuardarImagenDesdeDB(ByVal recordId As Integer) As String
-    On Error GoTo ErrHandler
-    
-    Dim conn As Object ' ADODB.Connection
-    Dim rs As Object   ' ADODB.Recordset
+Function obtenerImg() As String
+    Dim SqlStr As String
+    Dim rs_sign As ADODB.Recordset
     Dim imageData As Variant
     Dim filePath As String
     Dim fileNum As Integer
     Dim dataBytes() As Byte
 
-    ' Intentar abrir la conexión usando la función existente
-    If AbrirConexion() <> "OK" Then
-        GuardarImagenDesdeDB = "Error al conectar con la base de datos."
-        Exit Function
+    On Error GoTo PROC_ERR
+
+    ' Verificar y abrir la conexión si es necesario
+    If conn Is Nothing Or conn.State = adStateClosed Then
+        If AbrirConexion() <> "OK" Then
+            obtenerImg = "Error al conectar con la base de datos."
+            Exit Function
+        End If
     End If
 
-    ' Crear el objeto Recordset
-    Set rs = CreateObject("ADODB.Recordset")
+    ' Definir la consulta SQL
+    SqlStr = "SELECT campo FROM tabla WHERE codigo = '3423' AND id='342342'"
 
-    ' Ejecutar la consulta para obtener la imagen
-    rs.Open "SELECT ImageData FROM SourceTable WHERE Id = " & recordId, Conn, 1, 3 ' adOpenKeyset, adLockOptimistic
+    ' Crear el Recordset y ejecutar la consulta
+    Set rs_sign = New ADODB.Recordset
+    rs_sign.Open SqlStr, conn, adOpenKeySet, adLockOptimistic
 
-    ' Verificar si hay datos
-    If Not rs.EOF Then
-        imageData = rs.Fields("ImageData").Value ' Obtener los datos binarios
+    ' Verificar si hay datos en la consulta
+    If Not rs_sign.EOF Then
+        imageData = rs_sign.Fields("campo").Value ' Obtener la imagen del campo
 
-        ' Convertir a un array de bytes si no lo es
+        ' Convertir los datos a array de bytes si no es NULL
         If Not IsNull(imageData) Then
             dataBytes = imageData
             
-            ' Ruta donde se guardará la imagen en Mis Documentos
-            filePath = Environ("USERPROFILE") & "\Documents\imagen_prueba.bmp"
-            
-            ' Guardar el archivo en disco
+            ' Definir la ruta donde se guardará la imagen
+            filePath = "C:\Temp\imagen_prueba.bmp"
+
+            ' Guardar la imagen en disco
             fileNum = FreeFile
             Open filePath For Binary As #fileNum
             Put #fileNum, , dataBytes
             Close #fileNum
 
-            GuardarImagenDesdeDB = "Imagen guardada en: " & filePath
+            obtenerImg = "Imagen guardada en: " & filePath
         Else
-            GuardarImagenDesdeDB = "No se encontró la imagen en la base de datos."
+            obtenerImg = "No se encontró la imagen en la base de datos."
         End If
     Else
-        GuardarImagenDesdeDB = "Registro no encontrado."
+        obtenerImg = "Registro no encontrado."
     End If
 
-    ' Cerrar el Recordset
-    rs.Close
-    Set rs = Nothing
+    ' Cerrar Recordset
+    rs_sign.Close
+    Set rs_sign = Nothing
     Exit Function
 
-ErrHandler:
-    GuardarImagenDesdeDB = "Error al obtener la imagen."
+PROC_ERR:
+    obtenerImg = "Error al obtener la imagen: " & Err.Description
     Exit Function
 End Function
