@@ -2,16 +2,14 @@ Option Explicit
 Dim cn As ADODB.Connection
 Dim rs As ADODB.Recordset
 
-' Función pública mejorada para ajustar la longitud de la imagen
+' Función para guardar la imagen usando el mismo método de LeadTools
 Public Function GuardarImagenDesdeSQL(ByVal codigo As String, ByVal id As String) As String
     On Error GoTo ManejoDeErrores ' Manejo de errores
 
     Dim rutaSalida As String
-    Dim arrImagen() As Byte
     Dim archivo As Integer
     Dim sqlQuery As String
-    Dim tamanoImagen As Long
-    Dim tamanoOriginal As Long
+    Dim signData As String
 
     ' Crear conexión con SQL Server
     Set cn = New ADODB.Connection
@@ -19,7 +17,7 @@ Public Function GuardarImagenDesdeSQL(ByVal codigo As String, ByVal id As String
     cn.Open
 
     ' Construir consulta con parámetros dinámicos
-    sqlQuery = "SELECT imagen FROM TablaImagenes WHERE codigo = '" & codigo & "' AND id = '" & id & "'"
+    sqlQuery = "SELECT FOTO FROM TablaImagenes WHERE codigo = '" & codigo & "' AND id = '" & id & "'"
 
     ' Ejecutar consulta
     Set rs = New ADODB.Recordset
@@ -27,36 +25,33 @@ Public Function GuardarImagenDesdeSQL(ByVal codigo As String, ByVal id As String
 
     ' Verificar si hay una imagen
     If Not rs.EOF Then
-        ' Obtener datos binarios de la imagen
-        arrImagen = rs!imagen
-        tamanoImagen = UBound(arrImagen) - LBound(arrImagen) + 1
+        ' Obtener la imagen como STRING
+        signData = rs!FOTO
 
-        ' Asignar el tamaño esperado (según la imagen original)
-        tamanoOriginal = 2404 ' <-- Aquí ajustamos el tamaño correcto que detectamos en la imagen válida
+        ' Validar que no esté vacío
+        If Len(signData) > 0 Then
+            ' Definir ruta de salida
+            rutaSalida = "C:\Temp\Imagen_" & codigo & "_" & id & ".bmp"
 
-        ' Si la imagen es más grande, la recortamos al tamaño correcto
-        If tamanoImagen > tamanoOriginal Then
-            ReDim Preserve arrImagen(tamanoOriginal - 1)
+            ' Guardar archivo como LeadTools (Output en vez de Binary)
+            archivo = FreeFile
+            Open rutaSalida For Output As #archivo
+            Print #archivo, signData
+            Close #archivo
+
+            ' Cerrar conexiones
+            rs.Close
+            cn.Close
+            Set rs = Nothing
+            Set cn = Nothing
+
+            ' Retornar éxito con la ruta de la imagen guardada
+            GuardarImagenDesdeSQL = "Imagen guardada en " & rutaSalida
+            Exit Function
+        Else
+            ' Si la imagen está vacía
+            GuardarImagenDesdeSQL = "Error: La imagen recuperada está vacía."
         End If
-
-        ' Definir ruta de salida
-        rutaSalida = "C:\Temp\Imagen_" & codigo & "_" & id & ".bmp"
-
-        ' Guardar archivo en disco correctamente
-        archivo = FreeFile
-        Open rutaSalida For Binary As archivo
-        Put archivo, , arrImagen
-        Close archivo
-
-        ' Cerrar conexiones
-        rs.Close
-        cn.Close
-        Set rs = Nothing
-        Set cn = Nothing
-
-        ' Retornar éxito con la ruta de la imagen guardada
-        GuardarImagenDesdeSQL = "Imagen guardada en " & rutaSalida
-        Exit Function
     Else
         ' No se encontró la imagen
         GuardarImagenDesdeSQL = "No se encontró la imagen con el código: " & codigo & " y ID: " & id
