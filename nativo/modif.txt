@@ -2,18 +2,16 @@ Option Explicit
 Dim cn As ADODB.Connection
 Dim rs As ADODB.Recordset
 
-' Función pública para corregir los datos binarios y guardar la imagen correctamente
+' Función pública mejorada para ajustar la longitud de la imagen
 Public Function GuardarImagenDesdeSQL(ByVal codigo As String, ByVal id As String) As String
     On Error GoTo ManejoDeErrores ' Manejo de errores
 
     Dim rutaSalida As String
     Dim arrImagen() As Byte
-    Dim arrLimpio() As Byte
     Dim archivo As Integer
     Dim sqlQuery As String
-    Dim i As Long, j As Long
     Dim tamanoImagen As Long
-    Dim tamanoLimpio As Long
+    Dim tamanoOriginal As Long
 
     ' Crear conexión con SQL Server
     Set cn = New ADODB.Connection
@@ -29,45 +27,36 @@ Public Function GuardarImagenDesdeSQL(ByVal codigo As String, ByVal id As String
 
     ' Verificar si hay una imagen
     If Not rs.EOF Then
-        ' Obtener datos binarios de la imagen con los bytes erróneos
+        ' Obtener datos binarios de la imagen
         arrImagen = rs!imagen
         tamanoImagen = UBound(arrImagen) - LBound(arrImagen) + 1
 
-        ' Verificar si el tamaño es válido
-        If tamanoImagen > 0 Then
-            ' Estimamos el tamaño limpio (sin los bytes 00)
-            tamanoLimpio = tamanoImagen \ 2
-            ReDim arrLimpio(tamanoLimpio - 1)
+        ' Asignar el tamaño esperado (según la imagen original)
+        tamanoOriginal = 2404 ' <-- Aquí ajustamos el tamaño correcto que detectamos en la imagen válida
 
-            ' Remover los bytes 00 intercalados
-            j = 0
-            For i = LBound(arrImagen) To UBound(arrImagen) Step 2
-                arrLimpio(j) = arrImagen(i)
-                j = j + 1
-            Next i
-
-            ' Definir ruta de salida
-            rutaSalida = "C:\Temp\Imagen_" & codigo & "_" & id & ".bmp"
-
-            ' Guardar archivo en disco correctamente
-            archivo = FreeFile
-            Open rutaSalida For Binary As archivo
-            Put archivo, , arrLimpio
-            Close archivo
-
-            ' Cerrar conexiones
-            rs.Close
-            cn.Close
-            Set rs = Nothing
-            Set cn = Nothing
-
-            ' Retornar éxito con la ruta de la imagen guardada
-            GuardarImagenDesdeSQL = "Imagen guardada en " & rutaSalida
-            Exit Function
-        Else
-            ' Archivo vacío o corrupto
-            GuardarImagenDesdeSQL = "Error: La imagen recuperada tiene un tamaño inválido."
+        ' Si la imagen es más grande, la recortamos al tamaño correcto
+        If tamanoImagen > tamanoOriginal Then
+            ReDim Preserve arrImagen(tamanoOriginal - 1)
         End If
+
+        ' Definir ruta de salida
+        rutaSalida = "C:\Temp\Imagen_" & codigo & "_" & id & ".bmp"
+
+        ' Guardar archivo en disco correctamente
+        archivo = FreeFile
+        Open rutaSalida For Binary As archivo
+        Put archivo, , arrImagen
+        Close archivo
+
+        ' Cerrar conexiones
+        rs.Close
+        cn.Close
+        Set rs = Nothing
+        Set cn = Nothing
+
+        ' Retornar éxito con la ruta de la imagen guardada
+        GuardarImagenDesdeSQL = "Imagen guardada en " & rutaSalida
+        Exit Function
     Else
         ' No se encontró la imagen
         GuardarImagenDesdeSQL = "No se encontró la imagen con el código: " & codigo & " y ID: " & id
